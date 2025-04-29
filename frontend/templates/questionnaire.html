@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 禁用缓存的元标签 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>音乐喜好问卷 | 深度推荐音乐</title>
+    
+    <!-- 网站图标 -->
+    <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
+    
+    <!-- 引入Bulma CSS框架 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
+    
+    <!-- 引入Font Awesome图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    
+    <!-- 引入动画库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    
+    <!-- 自定义样式 -->
+    <link rel="stylesheet" href="/static/css/main.css?v=1.0.2">
+    <link rel="stylesheet" href="/static/css/questionnaire.css?v=1.0.2">
+    
+    <!-- 立即执行脚本，在DOM加载之前隐藏导航按钮 -->
+    <script>
+        // 立即执行函数，创建样式标签隐藏导航按钮
+        (function() {
+            console.log('预先隐藏所有导航按钮');
+            var style = document.createElement('style');
+            style.textContent = `
+                .questionnaire-actions, 
+                button[id*="next"], 
+                button[id*="prev"],
+                .navigation-buttons,
+                .nav-buttons,
+                a[href*="next"],
+                a[href*="prev"],
+                a.prev-button,
+                a.next-button,
+                .previous-button,
+                .next-button {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    overflow: hidden !important;
+                    position: absolute !important;
+                    z-index: -9999 !important;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // 创建MutationObserver来监视并删除任何新出现的导航按钮
+            var observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+                        for (var i = 0; i < mutation.addedNodes.length; i++) {
+                            var node = mutation.addedNodes[i];
+                            if (node.nodeType === 1) { // 元素节点
+                                // 检查新添加的节点是否是导航按钮
+                                if (node.classList && 
+                                    (node.classList.contains('questionnaire-actions') || 
+                                     node.classList.contains('navigation-buttons') ||
+                                     node.classList.contains('nav-buttons'))) {
+                                    node.remove();
+                                }
+                                
+                                // 检查ID或内容是否包含next或prev
+                                if (node.id && (node.id.includes('next') || node.id.includes('prev')) ||
+                                    node.textContent && (node.textContent.includes('Next') || 
+                                                      node.textContent.includes('Previous') ||
+                                                      node.textContent.includes('下一步') || 
+                                                      node.textContent.includes('上一步'))) {
+                                    node.remove();
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+            
+            // 在DOM加载完毕后启动观察
+            document.addEventListener('DOMContentLoaded', function() {
+                observer.observe(document.body, { 
+                    childList: true,
+                    subtree: true
+                });
+            });
+        })();
+    </script>
+</head>
+<body>
+    <!-- 语言切换按钮 -->
+    <div class="language-switcher">
+        <div class="buttons">
+            <button class="button is-active" data-lang="zh">中文</button>
+            <button class="button" data-lang="en">English</button>
+        </div>
+    </div>
+
+    <!-- 页面头部 -->
+    <section class="hero is-primary">
+        <div class="hero-body">
+            <div class="container has-text-centered">
+                <h1 class="title animate__animated animate__fadeIn">
+                    <i class="fas fa-music"></i> 音乐喜好问卷调查
+                </h1>
+                <h2 class="subtitle animate__animated animate__fadeIn animate__delay-1s">
+                    帮助我们了解您的音乐偏好，获得更精准的推荐
+                </h2>
+            </div>
+        </div>
+    </section>
+
+    <!-- 主要内容区域 -->
+    <section class="section">
+        <div class="container">
+            <div class="music-questionnaire animate__animated animate__fadeIn animate__delay-1s">
+                <div class="questionnaire-header">
+                    <div class="questionnaire-icon">
+                        <i class="fas fa-headphones-alt"></i>
+                    </div>
+                    <div class="questionnaire-title">
+                        <h3 id="question-section-title">音乐风格偏好</h3>
+                    </div>
+                    <div class="questionnaire-subtitle" id="question-section-subtitle">
+                        请选择您喜欢的音乐风格 (可多选)
+                    </div>
+                </div>
+
+                <!-- 进度条 -->
+                <div class="questionnaire-progress">
+                    <div class="questionnaire-progress-bar" id="progress-bar" style="width: 12.5%"></div>
+                </div>
+
+                <!-- 问题部分 -->
+                <div id="questionnaire-content">
+                    <!-- 问题1：音乐风格 -->
+                    <div class="question-card" id="question-1">
+                        <div class="question-text">
+                            <h4>您最喜欢哪些音乐风格？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="pop" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-music"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    流行音乐 (Pop)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="rock" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-guitar"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    摇滚音乐 (Rock)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="classical" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-violin"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    古典音乐 (Classical)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="jazz" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-saxophone"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    爵士乐 (Jazz)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="electronic" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-digital-tachograph"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    电子音乐 (Electronic)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="hiphop" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-microphone-alt"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    嘻哈音乐 (Hip-hop)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="folk" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-mountain"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    民谣 (Folk)
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="rnb" data-category="genres">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-compact-disc"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    R&B / 灵魂乐
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题2：音乐心情 -->
+                    <div class="question-card hidden" id="question-2">
+                        <div class="question-text">
+                            <h4>您通常在什么心情下听音乐？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="happy" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-smile"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    愉快/兴奋
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="relax" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-spa"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    放松/冥想
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="sad" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-cloud-rain"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    忧伤/沉思
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="energetic" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-bolt"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    精力充沛/运动
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="focus" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-brain"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    专注/工作
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="nostalgic" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-hourglass-half"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    怀旧/回忆
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="romantic" data-category="moods">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-heart"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    浪漫/感性
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题3：聆听场景 -->
+                    <div class="question-card hidden" id="question-3">
+                        <div class="question-text">
+                            <h4>您通常在哪些场景中听音乐？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="work" data-category="scenarios">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-laptop-code"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    工作/学习时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="exercise" data-category="scenarios">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-running"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    运动时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="commute" data-category="scenarios">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-car"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    通勤/旅行时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="relax" data-category="scenarios">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-couch"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    休息放松时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="party" data-category="scenarios">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-glass-cheers"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    社交/聚会时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="sleep" data-category="scenarios">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-bed"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    睡前/冥想时
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题4：语言偏好 -->
+                    <div class="question-card hidden" id="question-4">
+                        <div class="question-text">
+                            <h4>您偏好什么语言的歌曲？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="chinese" data-category="languages">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-language"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    中文歌曲
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="english" data-category="languages">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-language"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    英文歌曲
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="japanese" data-category="languages">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-language"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    日文歌曲
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="korean" data-category="languages">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-language"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    韩文歌曲
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="other" data-category="languages">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-globe"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    其他语言
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="instrumental" data-category="languages">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-music"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    纯音乐(无歌词)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题5：特定音乐元素偏好 -->
+                    <div class="question-card hidden" id="question-5">
+                        <div class="question-text">
+                            <h4>您在音乐中最注重哪些元素？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="melody" data-category="elements">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-wave-square"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    旋律/曲调
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="rhythm" data-category="elements">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-drum"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    节奏感
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="lyrics" data-category="elements">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-quote-right"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    歌词内容
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="vocals" data-category="elements">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-microphone"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    演唱/声音
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="instruments" data-category="elements">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-guitar"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    乐器声音
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="energy" data-category="elements">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-bolt"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    能量/情感
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题6：音乐年代偏好 -->
+                    <div class="question-card hidden" id="question-6">
+                        <div class="question-text">
+                            <h4>您偏好哪个年代的音乐？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="60s" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-record-vinyl"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    60年代
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="70s" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-record-vinyl"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    70年代
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="80s" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-tape"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    80年代
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="90s" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-compact-disc"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    90年代
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="00s" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-compact-disc"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    2000年代
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="10s" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-music"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    2010年代
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="current" data-category="eras">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-stream"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    现代/最新
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题7：每日听歌时长 -->
+                    <div class="question-card hidden" id="question-7">
+                        <div class="question-text">
+                            <h4>您平均每天听多长时间的音乐？</h4>
+                        </div>
+                        <div class="answer-options">
+                            <div class="answer-option" data-value="less1" data-category="listening_time">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    少于1小时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="1to2" data-category="listening_time">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    1-2小时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="2to4" data-category="listening_time">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    2-4小时
+                                </div>
+                            </div>
+                            <div class="answer-option" data-value="more4" data-category="listening_time">
+                                <div class="answer-option-icon">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="answer-option-text">
+                                    4小时以上
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问题8：喜欢的歌手 -->
+                    <div class="question-card hidden" id="question-8">
+                        <div class="question-text">
+                            <h4>您喜欢哪些歌手/音乐人？</h4>
+                            <p class="subtitle is-6">请在下面输入您喜欢的歌手/乐队名称（可多个，用逗号分隔）</p>
+                        </div>
+                        <div class="field">
+                            <div class="control">
+                                <textarea id="favorite-artists" class="textarea" placeholder="例如：周杰伦, Taylor Swift, BTS, The Weeknd..." rows="4"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 问卷完成感谢页 -->
+                    <div class="question-card" id="question-complete">
+                        <div class="questionnaire-reward">
+                            <div class="reward-icon">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <h3 class="reward-title">问卷已完成！</h3>
+                            <p class="reward-description">
+                                非常感谢您完成音乐喜好问卷！我们将根据您的偏好为您提供更加个性化的音乐推荐。
+                                现在您可以回到主页，探索为您精心推荐的歌曲。
+                            </p>
+                            <div class="buttons is-centered">
+                                <a href="/" class="button is-primary is-medium">
+                                    <i class="fas fa-home mr-2"></i> 返回首页
+                                </a>
+                                <a href="/?tab=recommend" class="button is-primary is-light is-medium">
+                                    <i class="fas fa-headphones mr-2"></i> 查看推荐
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 完全删除问卷导航按钮区域 -->
+                <!-- <div class="questionnaire-actions" style="display: none;">
+                    
+                </div> -->
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <p>
+                <strong>深度推荐音乐</strong> - 带给您个性化的音乐体验
+            </p>
+            <p>
+                <a href="/">首页</a> | 
+                <a href="/privacy">隐私政策</a> | 
+                <a href="/about">关于我们</a>
+            </p>
+        </div>
+    </footer>
+
+    <!-- 引入问卷与评分集成 JavaScript -->
+    <script src="/static/js/questionnaire_integration.js?v=1.0.1"></script>
+
+    <!-- JavaScript 代码 -->
+    <script>
+        console.log('问卷页面JS初始化...');
+        
+        // 问卷数据和状态
+        const questionnaireData = {
+            currentStep: 0, // 设置为0表示显示所有问题
+            totalSteps: 8,
+            answers: {
+                genres: [],
+                moods: [],
+                scenarios: [],
+                languages: [],
+                elements: [],
+                eras: [],
+                listening_time: [],
+                favorite_artists: ''
+            }
+        };
+
+        // 当DOM加载完成时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM已加载，初始化问卷...');
+            
+            // 强制移除页面上的所有导航按钮
+            removeAllNavigationButtons();
+            
+            // 确保页面不显示缓存内容
+            if (window.location.href.indexOf('?') > -1) {
+                window.location.href = window.location.href.split('?')[0] + '?nocache=' + new Date().getTime();
+            }
+            
+            // 显示所有问题，移除hidden类
+            document.querySelectorAll('.question-card').forEach(card => {
+                card.classList.remove('hidden');
+            });
+            
+            // 设置问卷进度条为100%
+            document.getElementById('progress-bar').style.width = '100%';
+            
+            // 设置标题
+            document.getElementById('question-section-title').textContent = '音乐偏好问卷';
+            document.getElementById('question-section-subtitle').textContent = '请告诉我们您的音乐喜好，以获得更好的推荐';
+            
+            // 仅保留选项点击事件和语言切换功能
+            attachOptionListeners();
+            attachLanguageSwitcher();
+            
+            // 添加提交按钮到每个问题部分之后
+            addSubmitButton();
+            
+            // 尝试从本地存储加载已保存的答案
+            loadSavedAnswers();
+        });
+        
+        // 附加选项监听器
+        function attachOptionListeners() {
+            // 选项点击事件
+            document.querySelectorAll('.answer-option').forEach(option => {
+                option.addEventListener('click', function() {
+                    const value = this.getAttribute('data-value');
+                    const category = this.getAttribute('data-category');
+                    
+                    // 特殊处理单选问题（如听歌时长）
+                    if (category === 'listening_time') {
+                        document.querySelectorAll(`.answer-option[data-category="${category}"]`).forEach(opt => {
+                            opt.classList.remove('selected');
+                        });
+                        questionnaireData.answers[category] = [value];
+                        this.classList.add('selected');
+                    } 
+                    // 多选问题
+                    else {
+                        if (this.classList.contains('selected')) {
+                            // 取消选择
+                            this.classList.remove('selected');
+                            const index = questionnaireData.answers[category].indexOf(value);
+                            if (index !== -1) {
+                                questionnaireData.answers[category].splice(index, 1);
+                            }
+                        } else {
+                            // 选择
+                            this.classList.add('selected');
+                            if (!questionnaireData.answers[category]) {
+                                questionnaireData.answers[category] = [];
+                            }
+                            questionnaireData.answers[category].push(value);
+                        }
+                    }
+                    
+                    // 自动保存
+                    saveAnswers();
+                });
+            });
+            
+            // 监听文本区域变化
+            const favoriteArtistsInput = document.getElementById('favorite-artists');
+            if (favoriteArtistsInput) {
+                favoriteArtistsInput.addEventListener('input', function() {
+                    questionnaireData.answers.favorite_artists = this.value;
+                    saveAnswers();
+                });
+            }
+        }
+        
+        // 附加语言切换功能
+        function attachLanguageSwitcher() {
+            document.querySelectorAll('.language-switcher .button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const lang = this.getAttribute('data-lang');
+                    
+                    // 设置激活状态
+                    document.querySelectorAll('.language-switcher .button').forEach(btn => {
+                        btn.classList.remove('is-active');
+                    });
+                    this.classList.add('is-active');
+                    
+                    // 切换语言逻辑
+                    switchLanguage(lang);
+                });
+            });
+        }
+        
+        // 切换语言
+        function switchLanguage(lang) {
+            console.log(`切换语言到: ${lang}`);
+            
+            // 可以从服务器加载翻译或使用预定义的翻译对象
+            const translations = {
+                'zh': {
+                    submitButton: '保存偏好',
+                    // ... 其他翻译
+                },
+                'en': {
+                    submitButton: 'Save Preferences',
+                    // ... 其他翻译
+                }
+            };
+            
+            // 应用翻译
+            document.querySelectorAll('.submit-button').forEach(btn => {
+                btn.textContent = translations[lang].submitButton;
+            });
+            
+            // 这里可以添加更多元素的翻译
+        }
+        
+        // 添加提交按钮
+        function addSubmitButton() {
+            const submitButton = document.createElement('div');
+            submitButton.className = 'has-text-centered mt-5 mb-5';
+            submitButton.innerHTML = `
+                <button class="action-button primary submit-button">
+                    <i class="fas fa-save mr-2"></i> 保存偏好
+                </button>
+            `;
+            
+            // 添加到最后一个问题之后
+            const lastQuestion = document.getElementById('question-8');
+            if (lastQuestion) {
+                lastQuestion.parentNode.insertBefore(submitButton, lastQuestion.nextSibling);
+                
+                // 添加点击事件
+                submitButton.querySelector('.submit-button').addEventListener('click', function() {
+                    saveAndSubmitAnswers();
+                });
+            }
+        }
+        
+        // 保存答案
+        function saveAnswers() {
+            try {
+                // 获取歌手信息
+                const favoriteArtistsInput = document.getElementById('favorite-artists');
+                if (favoriteArtistsInput) {
+                    questionnaireData.answers.favorite_artists = favoriteArtistsInput.value;
+                }
+                
+                // 保存到本地存储
+                localStorage.setItem('musicPreferences', JSON.stringify(questionnaireData.answers));
+                console.log('已自动保存问卷答案');
+            } catch (e) {
+                console.error('保存问卷答案出错:', e);
+            }
+        }
+        
+        // 保存并提交答案
+        function saveAndSubmitAnswers() {
+            saveAnswers();
+            
+            try {
+                // 触发问卷提交事件，通知其他组件
+                window.dispatchEvent(new CustomEvent('questionnaire_submitted', {
+                    detail: {
+                        answers: questionnaireData.answers
+                    }
+                }));
+                console.log('已分发问卷提交事件');
+                
+                // 显示成功通知
+                alert('您的音乐偏好已保存！我们将根据您的喜好为您推荐音乐。');
+                
+                // 重定向到主页
+                setTimeout(() => {
+                    window.location.href = '/?tab=recommend';
+                }, 1000);
+            } catch (e) {
+                console.error('提交问卷答案出错:', e);
+            }
+        }
+        
+        // 加载已保存的答案
+        function loadSavedAnswers() {
+            try {
+                const storedAnswers = localStorage.getItem('musicPreferences');
+                if (storedAnswers) {
+                    const savedData = JSON.parse(storedAnswers);
+                    console.log('从本地存储加载已保存的答案:', savedData);
+                    
+                    // 恢复已保存的答案
+                    Object.keys(savedData).forEach(category => {
+                        if (savedData[category] && Array.isArray(savedData[category])) {
+                            questionnaireData.answers[category] = savedData[category];
+                            
+                            // 为选项设置选中状态
+                            if (category !== 'favorite_artists') {
+                                savedData[category].forEach(value => {
+                                    const selector = `.answer-option[data-category="${category}"][data-value="${value}"]`;
+                                    const option = document.querySelector(selector);
+                                    if (option) {
+                                        option.classList.add('selected');
+                                    }
+                                });
+                            }
+                        } else if (category === 'favorite_artists' && savedData[category]) {
+                            questionnaireData.answers[category] = savedData[category];
+                            const favoriteArtistsInput = document.getElementById('favorite-artists');
+                            if (favoriteArtistsInput) {
+                                favoriteArtistsInput.value = savedData[category];
+                            }
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('加载已保存的答案出错:', e);
+            }
+        }
+
+        // 移除所有导航按钮
+        function removeAllNavigationButtons() {
+            // 删除所有Next和Previous按钮
+            const buttonSelectors = [
+                '.questionnaire-actions',
+                '.navigation-buttons',
+                'button[id*="next"]',
+                'button[id*="prev"]',
+                'button:contains("Next")',
+                'button:contains("Previous")',
+                'button:contains("下一步")',
+                'button:contains("上一步")'
+            ];
+            
+            buttonSelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    if (elements && elements.length > 0) {
+                        elements.forEach(el => {
+                            console.log('移除导航按钮元素:', el);
+                            el.remove();
+                        });
+                    }
+                } catch (e) {
+                    console.error('移除按钮时出错:', e);
+                }
+            });
+            
+            // 添加样式隐藏所有可能的按钮
+            const style = document.createElement('style');
+            style.textContent = `
+                .questionnaire-actions, 
+                button[id*="next"], 
+                button[id*="prev"],
+                .navigation-buttons,
+                .nav-buttons { 
+                    display: none !important; 
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            console.log('已移除所有导航按钮');
+        }
+    </script>
+</body>
+</html> 

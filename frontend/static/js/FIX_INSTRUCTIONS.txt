@@ -1,0 +1,52 @@
+修复main.js文件的步骤：
+
+1. 首先，确保文件使用UTF-8编码保存
+   - 在VS Code中，点击右下角的编码指示器
+   - 选择"通过编码保存"，然后选择"UTF-8"
+
+2. 主要问题：musicGame对象内部错误地包含了setTimeout函数
+   - 修复方法：将第3394-3397行的setTimeout函数移出对象定义
+   - 修改前:
+     ```javascript
+     updateParticles() {
+       ...
+     },
+     
+     // 当Vue应用加载完成后(或一段时间后)初始化游戏
+     setTimeout(() => {
+       initGameWhenCanvasReady();
+     }, 1000);
+     }; 
+     ```
+
+   - 修改后:
+     ```javascript
+     updateParticles() {
+       ...
+     }
+     }; 
+     
+     // 当Vue应用加载完成后(或一段时间后)初始化游戏
+     setTimeout(() => {
+       initGameWhenCanvasReady();
+     }, 1000);
+     ```
+
+3. 确保代码中的for循环使用分号(;)而不是逗号(,)作为分隔符：
+   - 检查所有的for循环，确保它们的语法是正确的，例如：
+     ```javascript
+     for (let i = 0; i < 50; i++) {
+       // 循环体
+     }
+     ```
+
+4. 保存文件并测试
+
+如果您无法直接编辑文件，请考虑使用以下PowerShell命令尝试自动修复：
+
+```powershell
+$content = Get-Content -Path main.js -Raw
+$fixedContent = $content -replace "updateParticles\(\) \{[\s\S]*?\}\s*,\s*\/\/ 当Vue应用加载完成[\s\S]*?setTimeout\(\(\) => \{\s*initGameWhenCanvasReady\(\);\s*\}, 1000\);", "updateParticles() {$1}};"
+$fixedContent += "`n`n// 当Vue应用加载完成后(或一段时间后)初始化游戏`nsetTimeout(() => {`n  initGameWhenCanvasReady();`n}, 1000);"
+$fixedContent | Set-Content -Path main.js -Encoding UTF8
+``` 

@@ -1,0 +1,498 @@
+/**
+ * 音乐问卷调查样式表
+ * 定义问卷调查界面的样式，保持黑色和紫色主题
+ */
+
+/* 隐藏所有导航按钮 */
+.questionnaire-actions, 
+button[id*="next"], 
+button[id*="prev"],
+.navigation-buttons,
+.nav-buttons,
+a[href*="next"],
+a[href*="prev"],
+a.prev-button,
+a.next-button {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    z-index: -9999 !important;
+}
+
+/* 问卷容器 */
+.music-questionnaire {
+    background-color: #1a1a1a; /* 更深的背景色 */
+    border-radius: 16px;
+    box-shadow: 0 6px 30px rgba(138, 43, 226, 0.35);
+    overflow: hidden;
+    transition: all 0.4s ease;
+    margin-bottom: 2rem;
+    border: 1px solid rgba(155, 75, 255, 0.3);
+    color: #ffffff; /* 白色文字 */
+    position: relative;
+    transform: translateY(0);
+}
+
+.music-questionnaire:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 40px rgba(138, 43, 226, 0.45);
+}
+
+/* 问卷标题区域 */
+.questionnaire-header {
+    padding: 2rem;
+    background: linear-gradient(135deg, #6A1B9A, #8A2BE2, #9B4BFF);
+    color: white;
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.questionnaire-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: url('/static/img/music-pattern.svg') center/cover no-repeat;
+    opacity: 0.15;
+    mix-blend-mode: overlay;
+}
+
+.questionnaire-icon {
+    margin-right: 1.2rem;
+    font-size: 2.2rem;
+    position: relative;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+.questionnaire-title {
+    flex: 1;
+    position: relative;
+}
+
+.questionnaire-title h3 {
+    font-size: 1.8rem;
+    margin: 0;
+    color: white;
+    font-weight: 700; /* 加粗 */
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    letter-spacing: 0.5px; /* 增加字间距 */
+}
+
+.questionnaire-subtitle {
+    font-size: 1.1rem;
+    opacity: 0.95;
+    margin-top: 0.5rem;
+    position: relative;
+    font-weight: 400; /* 增加清晰度 */
+    letter-spacing: 0.2px;
+}
+
+/* 问卷进度条 */
+.questionnaire-progress {
+    height: 6px;
+    background-color: #333333;
+    border-radius: 0;
+    overflow: hidden;
+    margin: 0;
+}
+
+.questionnaire-progress-bar {
+    height: 100%;
+    background: linear-gradient(to right, #8A2BE2, #9B4BFF);
+    transition: width 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 0 10px rgba(155, 75, 255, 0.5);
+}
+
+/* 问题卡片 */
+.question-card {
+    padding: 1.8rem;
+    transition: all 0.3s ease;
+    margin-bottom: 2.5rem;
+    border-top: 1px solid rgba(155, 75, 255, 0.15);
+    position: relative;
+    background-color: #222222; /* 稍微深色背景增加对比度 */
+}
+
+.question-card:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5px;
+    height: 100%;
+    background: linear-gradient(to bottom, #8A2BE2, #9B4BFF);
+    opacity: 0.8; /* 增加可见度 */
+}
+
+.question-card:first-of-type {
+    border-top: none;
+}
+
+.question-card.hidden {
+    display: none;
+}
+
+.question-text {
+    margin-bottom: 1.8rem;
+}
+
+.question-text h4 {
+    font-size: 1.5rem;
+    color: #ffffff;
+    font-weight: 600; /* 更加粗体 */
+    margin-bottom: 0.8rem;
+    display: flex;
+    align-items: center;
+    letter-spacing: 0.4px; /* 增加字间距提高清晰度 */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); /* 文字阴影增加清晰度 */
+}
+
+.question-text h4:before {
+    content: '\f025';
+    font-family: 'Font Awesome 5 Free';
+    margin-right: 0.8rem;
+    font-size: 1.2rem;
+    color: #b76aff; /* 更亮的紫色 */
+    background: rgba(155, 75, 255, 0.2);
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 900; /* 图标更粗 */
+}
+
+.question-text p.subtitle {
+    color: #e0e0e0; /* 增加亮度 */
+    margin-top: 0.3rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: 0.2px;
+}
+
+/* 答案选项区域 */
+.answer-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.2rem;
+    padding: 0.8rem 0;
+}
+
+.answer-option {
+    border: 2px solid #444444;
+    border-radius: 12px;
+    padding: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: all 0.25s ease;
+    background-color: #2a2a2a; /* 微调背景色 */
+    animation: fadeInUp 0.5s;
+    animation-fill-mode: both;
+    position: relative;
+    overflow: hidden;
+}
+
+.answer-option:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(155, 75, 255, 0.1), rgba(155, 75, 255, 0));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.answer-option:hover {
+    border-color: #9B4BFF;
+    background-color: #333333;
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(155, 75, 255, 0.35);
+}
+
+.answer-option:hover:before {
+    opacity: 1;
+}
+
+.answer-option.selected {
+    border-color: #9B4BFF;
+    background-color: rgba(155, 75, 255, 0.2);
+    box-shadow: 0 5px 15px rgba(155, 75, 255, 0.4);
+}
+
+.answer-option-icon {
+    width: 46px;
+    height: 46px;
+    background: linear-gradient(135deg, #8A2BE2, #9B4BFF);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 1rem;
+    font-size: 1.2rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+}
+
+.answer-option:hover .answer-option-icon {
+    transform: scale(1.1);
+}
+
+.answer-option-text {
+    font-weight: 500;
+    color: #ffffff;
+    letter-spacing: 0.2px; /* 增加字间距 */
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2); /* 轻微阴影增加清晰度 */
+}
+
+/* 问卷导航按钮 */
+.questionnaire-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2.5rem;
+    padding: 0 1.5rem 2rem;
+}
+
+.action-button {
+    padding: 0.8rem 2.2rem;
+    border-radius: 10px;
+    border: 1px solid #444444;
+    background-color: #333333;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    font-size: 1.1rem;
+    color: #ffffff;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.action-button:after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    border-radius: 100%;
+    transform: scale(1, 1) translate(-50%);
+    transform-origin: 50% 50%;
+}
+
+.action-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(155, 75, 255, 0.4);
+}
+
+.action-button:active:after {
+    animation: ripple 1s ease-out;
+}
+
+@keyframes ripple {
+    0% {
+        transform: scale(0, 0);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(30, 30);
+        opacity: 0;
+    }
+}
+
+.action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.action-button i {
+    margin-right: 0.5rem;
+}
+
+.action-button.primary {
+    background: linear-gradient(135deg, #8A2BE2, #9B4BFF);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 15px rgba(138, 43, 226, 0.4);
+}
+
+.action-button.primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7B1FA2, #8A2BE2);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(138, 43, 226, 0.5);
+}
+
+.action-button.primary:active:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(138, 43, 226, 0.4);
+}
+
+/* 问卷完成感谢区域 */
+.questionnaire-reward {
+    text-align: center;
+    padding: 3rem 2rem;
+    background-color: #252525;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(138, 43, 226, 0.2);
+}
+
+.reward-title {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 1.5rem;
+    color: #ffffff;
+    background: linear-gradient(135deg, #8A2BE2, #9B4BFF);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 10px rgba(155, 75, 255, 0.2);
+}
+
+.reward-icon {
+    font-size: 4.5rem;
+    color: #9B4BFF;
+    margin-bottom: 1.5rem;
+    text-shadow: 0 0 20px rgba(155, 75, 255, 0.6);
+}
+
+.reward-description {
+    font-size: 1.1rem;
+    color: #dddddd;
+    margin-bottom: 2rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.6;
+}
+
+/* 动画效果 */
+.questionnaire-fade-enter-active, .questionnaire-fade-leave-active {
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+.questionnaire-fade-enter, .questionnaire-fade-leave-to {
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .answer-options {
+        grid-template-columns: 1fr;
+    }
+    
+    .questionnaire-actions {
+        flex-direction: column-reverse;
+        gap: 1rem;
+    }
+    
+    .action-button {
+        width: 100%;
+    }
+}
+
+/* 添加问卷选项动画效果 */
+.answer-option {
+    animation: fadeInUp 0.5s;
+    animation-fill-mode: both;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 为每个选项添加延迟动画 */
+.answer-option:nth-child(1) { animation-delay: 0.1s; }
+.answer-option:nth-child(2) { animation-delay: 0.2s; }
+.answer-option:nth-child(3) { animation-delay: 0.3s; }
+.answer-option:nth-child(4) { animation-delay: 0.4s; }
+.answer-option:nth-child(5) { animation-delay: 0.5s; }
+.answer-option:nth-child(6) { animation-delay: 0.6s; }
+.answer-option:nth-child(7) { animation-delay: 0.7s; }
+.answer-option:nth-child(8) { animation-delay: 0.8s; }
+
+/* 黑暗主题调整 */
+.dark-theme .music-questionnaire {
+    background-color: #2a2a2a;
+}
+
+.dark-theme .answer-option {
+    border-color: #444;
+    color: #eee;
+}
+
+.dark-theme .answer-option:hover {
+    background-color: #333;
+    border-color: #8A2BE2;
+}
+
+.dark-theme .answer-option.selected {
+    background-color: #3a1c5a;
+}
+
+.dark-theme .action-button {
+    background-color: #333;
+    color: #eee;
+    border-color: #444;
+}
+
+.dark-theme .action-button.primary {
+    background-color: #8A2BE2;
+    border-color: #8A2BE2;
+}
+
+/* 添加提交按钮样式 */
+.submit-button {
+    padding: 1rem 2.5rem;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #8A2BE2, #9B4BFF);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 600;
+    border: none;
+    box-shadow: 0 4px 15px rgba(138, 43, 226, 0.5);
+    transition: all 0.25s ease;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 0.5px; /* 增加字间距 */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); /* 轻微阴影增加清晰度 */
+}
+
+.submit-button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(138, 43, 226, 0.6);
+    background: linear-gradient(135deg, #7B1FA2, #8A2BE2);
+}
+
+.submit-button:active {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(138, 43, 226, 0.4);
+} 

@@ -1,0 +1,4044 @@
+/**
+ * 音乐推荐系统主JavaScript文件
+ * 包含Vue.js应用初始化和核心功能实现
+ */
+
+// 等待页面加载完成
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('音乐推荐系统应用已初始化');
+  
+  // 全局事件总线，用于组件间通信
+  const EventBus = new Vue();
+  
+  // Vue.js应用实例
+  const app = new Vue({
+    el: '#app',
+    
+    // 数据属�?
+    data: {
+      // 应用状�?
+      currentTab: 'welcome',
+      isLoading: false,
+      isLoadingRecommendations: false,
+      currentLanguage: 'zh',
+      isDeveloperMode: false,
+      isRegistering: false,
+      loginUsername: "",
+      loginPassword: "",
+      loginEmail: "",
+      showLoginForm: true,
+      showWelcomeOptions: false,
+      showPreferencesSurvey: false,
+      surveyCompleted: false,
+      
+      // 用户相关
+      username: '',
+      email: '',
+      password: '',
+      loginErrorMessage: '',
+      loginForm: {
+        username: '',
+        email: '',
+        password: ''
+      },
+      
+      // 音乐偏好选项
+      musicGenres: [
+        '流行', '摇滚', '嘻哈', '电子', '爵士', '古典', 
+        'R&B', '乡村', '民谣', '金属', '蓝调', '世界音乐',
+        '独立', '实验', '氛围', '朋克', '雷鬼', '灵魂',
+        '放克', '迪斯�?, '布鲁�?, '拉丁', '英伦', '另类'
+      ],
+      selectedGenres: [],
+      
+      // 推荐算法设置
+      recommendationAlgorithms: {
+        hybrid: {
+          name: '混合推荐',
+          description: '结合SVD++、NCF、MLP算法和协同过滤提供更准确的推�?,
+          selected: true
+        },
+        collaborative: {
+          name: '协同过滤',
+          description: '基于用户行为和偏好的相似性推荐音�?,
+          selected: false
+        },
+        svdpp: {
+          name: 'SVD++算法',
+          description: '基于矩阵分解的推荐算�?,
+          selected: false
+        },
+        content: {
+          name: '内容推荐',
+          description: '基于音乐特征推荐相似风格的歌�?,
+          selected: false
+        }
+      },
+      
+      // 音乐调查问卷
+      surveyQuestions: [
+        {
+          id: 'music_genres',
+          question: '您喜欢哪些音乐类型？',
+          type: 'multiple',
+          options: [], // 将在初始化时填充
+          answer: []
+        },
+        {
+          id: 'listening_frequency',
+          question: '您多久听一次音乐？',
+          type: 'single',
+          options: ['每天', '每周几次', '偶尔', '很少'],
+          answer: ''
+        },
+        {
+          id: 'preferred_era',
+          question: '您偏好哪个年代的音乐�?,
+          type: 'multiple',
+          options: ['60年代', '70年代', '80年代', '90年代', '2000年代', '2010年代', '2020年代'],
+          answer: []
+        },
+        {
+          id: 'mood_preference',
+          question: '您通常在什么心情下听音乐？',
+          type: 'multiple',
+          options: ['放松�?, '工作/学习�?, '运动�?, '社交�?, '伤心�?, '开心时'],
+          answer: []
+        },
+        {
+          id: 'discovery_preference',
+          question: '您更喜欢发现新音乐还是听熟悉的歌曲？',
+          type: 'single',
+          options: ['总是寻找新音�?, '偶尔尝试新音�?, '主要听熟悉的歌曲', '只听我已知的歌曲'],
+          answer: ''
+        }
+      ],
+      
+      // 管理员功能相�?
+      allUsers: [],
+      newUser: {
+        username: '',
+        email: '',
+        password: '',
+        isDeveloper: false
+      },
+      editingUser: null,
+      
+      // 内容对象 - 修复模板中使用的content对象
+      content: {
+        welcome: {
+          title: '欢迎使用音乐推荐系统',
+          subtitle: '选择下面的选项开始您的音乐之�?,
+          talkToAI: '与AI音乐助手聊天',
+          talkToAIDesc: '向AI助手询问音乐推荐、艺术家信息或表达您的情绪，获取个性化音乐建议',
+          fillQuestionnaire: '填写音乐问卷',
+          fillQuestionnaireDesc: '通过对歌曲评分，帮助我们了解您的音乐偏好，获取更精准的推�?
+        },
+        rate: {
+          title: '对歌曲评�?,
+          subtitle: '请对以下歌曲进行评分，以帮助我们了解您的音乐品味',
+          notRated: '未评�?,
+          continueButton: '获取推荐',
+          needMoreRatings: '请至少对5首歌曲评�?
+        },
+        recommend: {
+          title: '个性化推荐',
+          subtitle: '根据您的评分，我们推荐以下歌�?,
+          loading: '正在为您生成推荐...',
+          noRecommendations: '暂无推荐，请先评分更多歌�?,
+          rateMore: '返回评分更多歌曲'
+        },
+        chat: {
+          title: 'AI音乐助手',
+          subtitle: '与AI助手交流，获取音乐推荐和信息',
+          welcome: '你好！我是你的AI音乐助手。我可以帮你找歌曲、了解艺术家、获取推荐，或者回答音乐相关问题。请随时向我提问�?,
+          inputPlaceholder: '输入您的问题或要�?..'
+        },
+        evaluate: {
+          title: '系统评估',
+          subtitle: '请对推荐系统进行评价，帮助我们改�?,
+          submit: '提交评估',
+          thanks: '感谢您的反馈�?,
+          select: '请选择',
+          rating: {
+            veryDissatisfied: '非常不满�?,
+            dissatisfied: '不满�?,
+            neutral: '一�?,
+            satisfied: '满意',
+            verySatisfied: '非常满意'
+          },
+          feedback: '其他建议或意�?,
+          feedbackPlaceholder: '请输入您的建议或意见...',
+          submitButton: '提交评价',
+          thankYou: '感谢您的反馈�?
+        },
+        header: {
+          title: '欢迎�?,
+          subtitle: '探索您的专属音乐世界',
+          logout: '退�?
+        },
+        tabs: {
+          welcome: '欢迎',
+          rate: '评分',
+          recommend: '推荐',
+          chat: '聊天',
+          evaluate: '评估'
+        },
+        footer: {
+          title: '音乐推荐系统',
+          description: '一个基于AI的个性化音乐推荐系统'
+        },
+        errors: {
+          emptyUsername: '请输入用户名',
+          loginFailed: '登录失败，请检查您的用户名和密�?
+        },
+        success: {
+          login: '登录成功�?
+        }
+      },
+      
+      // 翻译对象
+      translationsZh: {
+        welcome: '欢迎使用音乐推荐系统',
+        description: '探索个性化音乐推荐',
+        login: '登录',
+        register: '注册',
+        userId: '用户ID',
+        username: '用户�?,
+        password: '密码',
+        submit: '提交',
+        cancel: '取消',
+        rate: '评分',
+        recommend: '推荐',
+        chat: '聊天',
+        evaluate: '评估',
+        moreInfo: '更多信息',
+        rateThisSong: '为这首歌评分',
+        similar: '相似歌曲',
+        artist: '艺术�?,
+        album: '专辑',
+        releaseDate: '发行日期',
+        popularity: '流行�?,
+        listen: '收听',
+        chatWithAI: '与AI音乐助手聊天',
+        sendMessage: '发送消�?,
+        typeMessage: '输入消息...',
+        loading: '加载�?..',
+        error: '出错�?,
+        retry: '重试',
+        noResults: '没有结果',
+        welcome_message: '你好！我是你的AI音乐助手。我可以帮你找歌曲、了解艺术家、获取推荐，或者回答音乐相关问题。请随时向我提问�?,
+        developer: '开发�?,
+        logout: '退出登�?,
+        enterUsername: '请输入用户名',
+        enterEmail: '请输入邮�?,
+        enterPassword: '请输入密�?
+      },
+      translationsEn: {
+        welcome: 'Welcome to Music Recommendation System',
+        description: 'Explore personalized music recommendations',
+        login: 'Login',
+        register: 'Register',
+        userId: 'User ID',
+        username: 'Username',
+        password: 'Password',
+        submit: 'Submit',
+        cancel: 'Cancel',
+        rate: 'Rate',
+        recommend: 'Recommend',
+        chat: 'Chat',
+        evaluate: 'Evaluate',
+        moreInfo: 'More Info',
+        rateThisSong: 'Rate this song',
+        similar: 'Similar Songs',
+        artist: 'Artist',
+        album: 'Album',
+        releaseDate: 'Release Date',
+        popularity: 'Popularity',
+        listen: 'Listen',
+        chatWithAI: 'Chat with AI Music Assistant',
+        sendMessage: 'Send Message',
+        typeMessage: 'Type a message...',
+        loading: 'Loading...',
+        error: 'Error',
+        retry: 'Retry',
+        noResults: 'No Results',
+        welcome_message: 'Hello! I am your AI music assistant. I can help you find songs, learn about artists, get recommendations, or answer music-related questions. Feel free to ask me anything!',
+        developer: 'Developer',
+        logout: 'Logout',
+        welcome_title: 'Welcome to Music Recommendation System',
+        welcome_subtitle: 'Choose an option below to start your music journey',
+        welcome_talkToAI: 'Chat with AI Music Assistant',
+        welcome_talkToAIDesc: 'Ask the AI assistant for music recommendations, artist information, or express your emotions for personalized music suggestions',
+        welcome_fillQuestionnaire: 'Fill Music Questionnaire',
+        welcome_fillQuestionnaireDesc: 'Rate songs to help us understand your music preferences and get more accurate recommendations'
+      },
+      
+      // 评估问题
+      evaluationQuestions: [
+        { id: 'recommendation_quality', text: '您对系统的推荐质量满意吗�? },
+        { id: 'ui_experience', text: '您对系统的用户界面体验满意吗�? },
+        { id: 'overall_satisfaction', text: '您对系统的整体体验满意吗�? }
+      ],
+      evaluationResponses: [],
+      evaluationSubmitted: false,
+      
+      // 用户信息
+      user: {
+        id: null,
+        username: '',
+        email: '',
+        isLoggedIn: false,
+        isDeveloper: false
+      },
+      
+      // 音乐数据
+      sampleSongs: [
+        {
+          track_id: '1',
+          track_name: '晴天',
+          artist_name: '周杰�?,
+          title: '晴天',
+          artist: '周杰�?,
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+        {
+          track_id: '2',
+          track_name: 'Shape of You',
+          artist_name: 'Ed Sheeran',
+          title: 'Shape of You',
+          artist: 'Ed Sheeran',
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+        {
+          track_id: '3',
+          track_name: '演员',
+          artist_name: '薛之�?,
+          title: '演员',
+          artist: '薛之�?,
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+        {
+          track_id: '4',
+          track_name: 'Uptown Funk',
+          artist_name: 'Mark Ronson ft. Bruno Mars',
+          title: 'Uptown Funk',
+          artist: 'Mark Ronson ft. Bruno Mars',
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+        {
+          track_id: '5',
+          track_name: '漂洋过海来看�?,
+          artist_name: '刘明�?,
+          title: '漂洋过海来看�?,
+          artist: '刘明�?,
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+      ],
+      userRatings: {},
+      recommendations: [
+        {
+          track_id: 'rec1',
+          track_name: '爱情转移',
+          artist_name: '陈奕�?,
+          title: '爱情转移',
+          artist: '陈奕�?,
+          explanation: '基于您对周杰伦的喜好推荐',
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+        {
+          track_id: 'rec2',
+          track_name: 'Thinking Out Loud',
+          artist_name: 'Ed Sheeran',
+          title: 'Thinking Out Loud',
+          artist: 'Ed Sheeran',
+          explanation: '与您喜欢�?Shape of You 风格相似',
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        },
+        {
+          track_id: 'rec3',
+          track_name: '丑八�?,
+          artist_name: '薛之�?,
+          title: '丑八�?,
+          artist: '薛之�?,
+          explanation: '来自您喜欢的艺术家薛之谦',
+          album_image: '/static/img/default-album.png',
+          preview_url: null
+        }
+      ],
+      
+      // 聊天相关
+      chatMessage: '',
+      chatHistory: [],
+      chatMessages: [],
+      chatInput: '',
+      isTyping: false,
+      
+      // 评估数据
+      satisfactionLevel: 0,
+      feedbackText: '',
+      evaluationComment: '',
+      
+      // 系统消息
+      notification: {
+        message: '',
+        type: 'info',
+        isVisible: false
+      },
+      
+      // 通知列表
+      notifications: [],
+      
+      // 音频播放
+      currentPreviewUrl: null,
+      audioPlayer: null,
+      
+      // 情绪分析相关
+      emotionKeywords: [
+        '难过', '伤心', '悲伤', '压力', '焦虑', '开�?, '高兴', '兴奋', 
+        '生气', '愤�?, '无聊', '疲惫', '孤独', '思念', '失落', 
+        '想哭', '不开�?, '抑郁', '烦躁', '心情'
+      ],
+      lastEmotionAnalysis: null,
+      isEmotionAnalysing: false,
+      
+      translations: {
+        zh: {
+          appTitle: '深度推荐音乐',
+          recommendations: '推荐',
+          chat: '聊天',
+          evaluation: '评价',
+          developer: '开发者模�?,
+          logout: '退出登�?
+        },
+        en: {
+          appTitle: 'Deep Recommend Music',
+          recommendations: 'Recommendations',
+          chat: 'Chat',
+          evaluation: 'Evaluation',
+          developer: 'Developer Mode',
+          logout: 'Log Out'
+        }
+      },
+      
+      // 底部描述更新以提及混合推荐算�?
+      footerDescription: {
+        zh: '本系统采用混合推荐算�?(SVD++, NCF, MLP 和协同过�?，结合内容分析和用户行为，提供个性化音乐推荐�?,
+        en: 'This system uses a hybrid recommendation algorithm (SVD++, NCF, MLP, and Collaborative Filtering), combining content analysis and user behavior to provide personalized music recommendations.'
+      },
+      
+      // 用户偏好
+      preferences: [],
+      
+      // 默认推荐歌曲
+      defaultRecommendations: [
+        {
+          track_id: 'default_1',
+          track_name: '千里之外',
+          artist_name: '周杰�?,
+          title: '千里之外',
+          artist: '周杰�?,
+          explanation: '热门华语歌曲推荐'
+        },
+        {
+          track_id: 'default_2',
+          track_name: '起风�?,
+          artist_name: '买辣椒也用券',
+          title: '起风�?,
+          artist: '买辣椒也用券',
+          explanation: '近期流行歌曲推荐'
+        }
+      ]
+    },
+    
+    // 计算属�?
+    computed: {
+      // 已评分的歌曲数量
+      ratedSongsCount() {
+        return Object.keys(this.userRatings).length;
+      },
+      
+      // 用户是否可以获取推荐
+      canGetRecommendations() {
+        return this.ratedSongsCount >= 5 && this.user.isLoggedIn;
+      },
+      
+      // 用户是否已经评分足够的歌�?
+      hasRatedEnoughSongs() {
+        return this.ratedSongsCount >= 5;
+      },
+      
+      // 显示语言
+      t() {
+        return (key) => {
+          const translations = this.currentLanguage === 'zh' ? this.translationsZh : this.translationsEn;
+          return translations[key] || key;
+        };
+      },
+      
+      // 评估是否完成
+      isEvaluationComplete() {
+        return this.evaluationResponses.filter(r => r !== '').length === this.evaluationQuestions.length;
+      },
+      
+      // 登录状�?(兼容模板中的变量�?
+      isLoggedIn() {
+        return this.user.isLoggedIn;
+      }
+    },
+    
+    // 监听属性变�?
+    watch: {
+      currentLanguage(newVal) {
+        localStorage.setItem('preferredLanguage', newVal);
+      },
+      'user.isLoggedIn'(newValue) {
+        if (newValue) {
+          // 保存用户ID到本地存�?
+          localStorage.setItem('musicRecommendUserId', this.user.id);
+        }
+      }
+    },
+    
+    // 创建时执�?
+    created() {
+      // 初始化情绪关键词列表
+      this.emotionKeywords = [
+          '难过', '伤心', '悲伤', '压力', '焦虑', '开�?, '高兴', '兴奋', 
+          '生气', '愤�?, '无聊', '疲惫', '孤独', '思念', '失落', 
+          '想哭', '不开�?, '抑郁', '烦躁', '心情'
+      ];
+      
+      // 检查用户会�?
+      this.checkUserSession();
+      
+      // 设置默认语言
+      this.currentLanguage = localStorage.getItem('language') || 'zh';
+      
+      // 从本地存储加载语言偏好
+      const savedLanguage = localStorage.getItem('preferredLanguage');
+      if (savedLanguage) {
+        this.currentLanguage = savedLanguage;
+      }
+      
+      // 初始化加载状�?
+      this.isLoading = false;
+      this.isLoadingRecommendations = false;
+      
+      // 设置translations对象
+      if (!this.translations || !this.translations.zh || !this.translations.zh.welcome) {
+        // 确保translations对象完整
+        this.translations = {
+          zh: {
+            appTitle: '深度推荐音乐',
+            recommendations: '推荐',
+            chat: '聊天',
+            evaluation: '评价',
+            developer: '开发者模�?,
+            logout: '退出登�?,
+            tabs: {
+              welcome: '欢迎',
+              rate: '评分',
+              recommend: '推荐',
+              chat: '聊天',
+              evaluate: '评估',
+              admin: '用户管理'
+            },
+            welcome: {
+              title: '欢迎使用音乐推荐系统',
+              subtitle: '选择下面的选项开始您的音乐之�?,
+              talkToAI: '与AI音乐助手聊天',
+              talkToAIDesc: '向AI助手询问音乐推荐、艺术家信息或表达您的情绪，获取个性化音乐建议',
+              fillQuestionnaire: '填写音乐问卷',
+              fillQuestionnaireDesc: '通过对歌曲评分，帮助我们了解您的音乐偏好，获取更精准的推�?
+            }
+          },
+          en: {
+            appTitle: 'Deep Recommend Music',
+            recommendations: 'Recommendations',
+            chat: 'Chat',
+            evaluation: 'Evaluation',
+            developer: 'Developer Mode',
+            logout: 'Log Out',
+            tabs: {
+              welcome: 'Welcome',
+              rate: 'Rate',
+              recommend: 'Recommend',
+              chat: 'Chat',
+              evaluate: 'Evaluate',
+              admin: 'User Admin'
+            },
+            welcome: {
+              title: 'Welcome to Music Recommendation System',
+              subtitle: 'Choose an option below to start your music journey',
+              talkToAI: 'Chat with AI Music Assistant',
+              talkToAIDesc: 'Ask the AI assistant for music recommendations, artist information, or express your emotions for personalized music suggestions',
+              fillQuestionnaire: 'Fill Music Questionnaire',
+              fillQuestionnaireDesc: 'Rate songs to help us understand your music preferences and get more accurate recommendations'
+            }
+          }
+        };
+      }
+      
+      // 设置默认示例歌曲，防止渲染错�?
+      this.sampleSongs = [
+        { 
+          track_id: '1', 
+          track_name: '晴天', 
+          artist_name: '周杰�?, 
+          album_name: '叶惠�?,
+          title: '晴天',
+          artist: '周杰�?,
+          rating: 5,  // 默认评分�?
+          album_image: '/static/img/default-album.png'
+        },
+        { 
+          track_id: '2', 
+          track_name: 'Shape of You', 
+          artist_name: 'Ed Sheeran', 
+          album_name: 'Divide',
+          title: 'Shape of You',
+          artist: 'Ed Sheeran',
+          rating: 4,  // 默认评分�?
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: '3',
+          track_name: '演员',
+          artist_name: '薛之�?,
+          album_name: '绅士',
+          title: '演员',
+          artist: '薛之�?,
+          rating: 5,
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: '4',
+          track_name: 'Uptown Funk',
+          artist_name: 'Mark Ronson ft. Bruno Mars',
+          album_name: 'Uptown Special',
+          title: 'Uptown Funk',
+          artist: 'Mark Ronson ft. Bruno Mars',
+          rating: 4,
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: '5',
+          track_name: '漂洋过海来看�?,
+          artist_name: '刘明�?,
+          album_name: '漂洋过海来看�?,
+          title: '漂洋过海来看�?,
+          artist: '刘明�?,
+          rating: 5,
+          album_image: '/static/img/default-album.png'
+        }
+      ];
+      
+      // 设置默认推荐数据，防止渲染错�?
+      this.recommendations = [
+        {
+          track_id: 'rec1',
+          track_name: '告白气球',
+          artist_name: '周杰�?,
+          explanation: '根据您喜欢的周杰伦的作品推荐',
+          title: '告白气球',
+          artist: '周杰�?,
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: 'rec2',
+          track_name: 'Perfect',
+          artist_name: 'Ed Sheeran',
+          explanation: '与您喜欢的Shape of You风格相似',
+          title: 'Perfect',
+          artist: 'Ed Sheeran',
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: 'rec3',
+          track_name: '光年之外',
+          artist_name: '邓紫�?,
+          explanation: '基于您的流行音乐偏好推荐',
+          title: '光年之外',
+          artist: '邓紫�?,
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: 'rec4',
+          track_name: 'Thinking Out Loud',
+          artist_name: 'Ed Sheeran',
+          explanation: '与您喜欢的Shape of You的艺术家相同',
+          title: 'Thinking Out Loud',
+          artist: 'Ed Sheeran',
+          album_image: '/static/img/default-album.png'
+        },
+        {
+          track_id: 'rec5',
+          track_name: '安静',
+          artist_name: '周杰�?,
+          explanation: '根据您喜欢的周杰伦的作品推荐',
+          title: '安静',
+          artist: '周杰�?,
+          album_image: '/static/img/default-album.png'
+        }
+      ];
+      
+      // 初始化必要的数据，避免undefined错误
+      this.chatMessages = [];
+      if (!Array.isArray(this.chatMessages)) {
+        this.chatMessages = [];
+      }
+      
+      // 确保内容对象存在
+      if (!this.content) {
+        this.content = {
+          welcome: {
+            title: '欢迎使用音乐推荐系统',
+            subtitle: '选择下面的选项开始您的音乐之�?,
+            talkToAI: '与AI音乐助手聊天',
+            talkToAIDesc: '向AI助手询问音乐推荐、艺术家信息或表达您的情绪，获取个性化音乐建议',
+            fillQuestionnaire: '填写音乐问卷',
+            fillQuestionnaireDesc: '通过对歌曲评分，帮助我们了解您的音乐偏好，获取更精准的推�?
+          },
+          rate: {
+            title: '对歌曲评�?,
+            subtitle: '请对以下歌曲进行评分，以帮助我们了解您的音乐品味',
+            notRated: '未评�?,
+            continueButton: '获取推荐',
+            needMoreRatings: '请至少对5首歌曲评�?
+          },
+          recommend: {
+            title: '个性化推荐',
+            subtitle: '根据您的评分，我们推荐以下歌�?,
+            loading: '正在为您生成推荐...',
+            noRecommendations: '暂无推荐，请先评分更多歌�?,
+            rateMore: '返回评分更多歌曲'
+          },
+          chat: {
+            title: 'AI音乐助手',
+            subtitle: '与AI助手交流，获取音乐推荐和信息',
+            welcome: '你好！我是你的AI音乐助手。我可以帮你找歌曲、了解艺术家、获取推荐，或者回答音乐相关问题。请随时向我提问�?,
+            inputPlaceholder: '输入您的问题或要�?..'
+          },
+          evaluate: {
+            title: '系统评估',
+            subtitle: '请对推荐系统进行评价，帮助我们改�?,
+            submit: '提交评估',
+            thanks: '感谢您的反馈�?
+          },
+          header: {
+            title: '欢迎�?,
+            subtitle: '探索您的专属音乐世界',
+            logout: '退�?
+          },
+          tabs: {
+            welcome: '欢迎',
+            rate: '评分',
+            recommend: '推荐',
+            chat: '聊天',
+            evaluate: '评估'
+          },
+          footer: {
+            title: '音乐推荐系统',
+            description: '一个基于AI的个性化音乐推荐系统'
+          },
+          errors: {
+            emptyUsername: '请输入用户名',
+            loginFailed: '登录失败，请检查您的用户名和密�?
+          },
+          success: {
+            login: '登录成功�?
+          }
+        };
+      }
+      
+      // 初始化情绪关键词数组
+      if (!this.emotionKeywords || !Array.isArray(this.emotionKeywords)) {
+        this.emotionKeywords = [
+          '难过', '伤心', '悲伤', '压力', '焦虑', '开�?, '高兴', '兴奋', 
+          '生气', '愤�?, '无聊', '疲惫', '孤独', '思念', '失落', 
+          '想哭', '不开�?, '抑郁', '烦躁', '心情'
+        ];
+      }
+      
+      // 确保其他变量有默认�?
+      this.chatInput = '';
+      this.notifications = [];
+      this.evaluationResponses = [];
+      this.currentPreviewUrl = null;
+      
+      // 预设用户评分数据
+      this.userRatings = {
+        '1': 5, // 晴天评分�?
+        '2': 4, // Shape of You评分�?
+        '3': 5, // 演员评分�?
+        '4': 4, // Uptown Funk评分�?
+        '5': 5  // 漂洋过海来看你评分为5
+      };
+      
+      // 添加AI欢迎消息
+      this.chatMessages.push({
+        content: `欢迎�?{this.user.username}！我是您的AI音乐助手。请问您想了解什么音乐信息或获取什么推荐？`,
+        isUser: false
+      });
+      
+      // 显示欢迎通知
+      this.showNotification('欢迎使用音乐推荐系统！我们已为您准备了一些推荐�?, 'success');
+      
+      // 自动加载示例歌曲（但不调用API�?
+      console.log('已加载示例歌�?', this.sampleSongs.length);
+      console.log('已设置用户评�?', Object.keys(this.userRatings).length);
+      
+      // 定时动画效果
+      setTimeout(() => {
+        const cards = document.querySelectorAll('.recommendation-item');
+        if (cards && cards.length > 0) {
+          cards.forEach((card, index) => {
+            setTimeout(() => {
+              card.classList.add('animate__animated', 'animate__fadeInUp');
+            }, index * 100);
+          });
+        }
+      }, 500);
+    },
+    
+    // 方法定义
+    methods: {
+      // 获取对应语言的翻�?
+      getTranslation(key) {
+        const translations = this.currentLanguage === 'zh' ? 
+          (this.translations.zh || this.translationsZh) : 
+          (this.translations.en || this.translationsEn);
+        return translations[key] || key;
+      },
+      
+      // 切换语言
+      switchLanguage(lang) {
+        if (lang) {
+          this.currentLanguage = lang;
+        } else {
+          // 如果没有提供参数，则切换语言
+          this.currentLanguage = this.currentLanguage === 'zh' ? 'en' : 'zh';
+        }
+        document.documentElement.lang = this.currentLanguage;
+      },
+      
+      // 切换标签�?
+      switchTab(tab) {
+        if (tab === 'welcome') {
+          console.log("切换到欢迎页�?);
+        }
+        this.currentTab = tab;
+        
+        // 如果切换到推荐标签页，获取推�?
+        if (tab === 'recommend' && this.canGetRecommendations) {
+          this.getRecommendations();
+        }
+        
+        // 如果切换到聊天标签页，加载聊天历�?
+        if (tab === 'chat' && this.user.isLoggedIn) {
+          this.getChatHistory();
+        }
+      },
+      
+      // 检查用户会�?
+      checkUserSession() {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          this.user = JSON.parse(storedUser);
+        }
+      },
+      
+      // 加载初始数据
+      loadInitialData() {
+        // 加载示例歌曲
+        this.loadSampleSongs();
+        
+        // 如果用户已登录，获取用户评分记录
+        if (this.user.isLoggedIn) {
+          this.getUserRatings();
+        }
+      },
+      
+      // 加载示例歌曲
+      loadSampleSongs() {
+        // 使用预设的示例歌曲数据，不发送API请求
+        console.log('使用预设的示例歌曲数�?);
+        
+        // 设置加载状�?
+        this.isLoading = true;
+        
+        // 模拟网络延迟
+        setTimeout(() => {
+          this.isLoading = false;
+          console.log('已加载示例歌�?', this.sampleSongs.length);
+          
+          // 如果有用户评分数据，应用到歌曲上
+          if (Object.keys(this.userRatings).length > 0) {
+            this.sampleSongs.forEach(song => {
+              if (this.userRatings[song.track_id]) {
+                song.rating = this.userRatings[song.track_id];
+              }
+            });
+          }
+        }, 500);
+      },
+      
+      // 获取用户评分记录
+      getUserRatings() {
+        if (!this.user.isLoggedIn) return;
+        
+        this.isLoading = true;
+        
+        // 使用用户名作为ID
+        const userId = this.user.id || this.user.username;
+        
+        axios.get(`/api/user_ratings/${userId}`)
+          .then(response => {
+            this.userRatings = response.data || {};
+            console.log('已加载用户评�?', Object.keys(this.userRatings).length);
+            
+            // 更新示例歌曲的评�?
+            if (this.sampleSongs.length > 0) {
+              this.sampleSongs.forEach(song => {
+                if (this.userRatings[song.track_id]) {
+                  this.$set(song, 'rating', this.userRatings[song.track_id]);
+                }
+              });
+            }
+          })
+          .catch(error => {
+            console.error('加载用户评分失败:', error);
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 评分歌曲
+      rateSong(trackId, rating) {
+        if (!this.user.isLoggedIn) {
+          this.showNotification('请先登录后再评分', 'warning');
+          return;
+        }
+        
+        this.isLoading = true;
+        
+        // 动画效果标记该歌曲已评分
+        const songElement = document.querySelector(`[data-track-id="${trackId}"]`);
+        if (songElement) {
+          songElement.classList.add('animate__animated', 'animate__pulse');
+          setTimeout(() => {
+            songElement.classList.remove('animate__animated', 'animate__pulse');
+          }, 1000);
+        }
+        
+        axios.post('/api/rate_song', {
+          user_id: this.user.id,
+          track_id: trackId,
+          rating: rating
+        })
+          .then(response => {
+            // 更新本地评分记录
+            this.$set(this.userRatings, trackId, rating);
+            console.log('歌曲评分成功:', trackId, rating);
+            
+            // 检查是否可以获取推�?
+            if (this.canGetRecommendations) {
+              this.showNotification('您已评分足够的歌曲，可以获取个性化推荐�?, 'success');
+            }
+          })
+          .catch(error => {
+            console.error('歌曲评分失败:', error);
+            this.showNotification('评分失败，请重试', 'danger');
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 获取推荐歌曲
+      getRecommendations() {
+        // 我们已经有预设的推荐数据，直接使用它�?
+        console.log('使用预设的推荐数�?);
+        
+        // 设置加载状�?
+        this.isLoadingRecommendations = true;
+        
+        // 模拟网络请求延迟
+        setTimeout(() => {
+          this.isLoadingRecommendations = false;
+          
+          // 添加动画效果
+          setTimeout(() => {
+            const cards = document.querySelectorAll('.recommendation-item');
+            if (cards && cards.length > 0) {
+              cards.forEach((card, index) => {
+                setTimeout(() => {
+                  card.classList.add('animate__animated', 'animate__fadeInUp');
+                }, index * 100);
+              });
+            }
+          }, 100);
+          
+          this.showNotification('已为您生成推荐歌曲！', 'success');
+        }, 1000);
+      },
+      
+      // 发送聊天消�?
+      sendChatMessage() {
+        if (!this.chatInput.trim()) {
+            return;
+        }
+        
+        // 添加用户消息到聊�?
+        this.addChatMessage(this.chatInput, true);
+        
+        // 保存用户输入
+        const userMessage = this.chatInput;
+        this.chatInput = '';
+        
+        // 显示AI正在输入的状�?
+        this.isTyping = true;
+        
+        // 分析消息是否包含情绪内容
+        if (this.containsEmotionKeywords(userMessage)) {
+            this.analyzeEmotionAndRecommend(userMessage);
+        } else {
+            this.sendRegularChatMessage(userMessage);
+        }
+      },
+      
+      /**
+       * 发送常规聊天消息到API
+       */
+      sendRegularChatMessage(message) {
+        // 发送消息到后端
+        axios.post('/api/chat', {
+            user_id: this.user.id,
+            message: message
+        })
+        .then(response => {
+            this.isTyping = false;
+            
+            if (response.data && response.data.response) {
+                // 添加AI回复到聊�?
+                this.addChatMessage(response.data.response);
+                
+                // 保存聊天记录
+                this.saveChatHistory();
+            } else {
+                this.addChatMessage("抱歉，我暂时无法回应您的问题。请稍后再试�?);
+            }
+        })
+        .catch(error => {
+            this.isTyping = false;
+            console.error('聊天消息发送错�?', error);
+            this.addChatMessage("网络错误，无法获取回复。请检查您的网络连接后再试�?);
+        });
+      },
+      
+      /**
+       * 分析用户情绪并推荐音�?
+       */
+      analyzeEmotionAndRecommend(message) {
+        if (!message || !this.user || !this.user.id) {
+          console.error('analyzeEmotionAndRecommend: 参数不完�?);
+          this.showNotification('无法分析情绪，请稍后再试', 'error');
+          this.isLoading = false;
+          return;
+        }
+        
+        this.isEmotionAnalysing = true;
+        
+        axios.post('/api/emotion/analyze', {
+          user_id: this.user.id,
+          message: message
+        })
+          .then(response => {
+            // 保存情绪分析结果
+            this.lastEmotionAnalysis = {
+              emotion: response.data.emotion || 'neutral',
+              intensity: response.data.intensity || 0.5,
+              description: response.data.description || '您的情绪状�?,
+              music_suggestion: response.data.music_suggestion || '适合您当前情绪的音乐'
+            };
+            
+            // 添加 AI 回复到聊天历�?
+            this.chatMessages.push({
+              content: response.data.response || '我了解了您的情绪，让我为您推荐一些适合的音乐�?,
+              isUser: false
+            });
+            
+            // 如果用户当前在聊天标签，提示可以在推荐标签查看相关音�?
+            if (this.currentTab === 'chat') {
+              this.showNotification('AI助手已分析您的情绪并推荐了适合的音�?, 'info');
+            }
+            
+            // 尝试获取基于情绪的音乐推�?
+            if (response.data.emotion) {
+              this.getEmotionBasedMusic(response.data.emotion);
+            }
+          })
+          .catch(error => {
+            console.error('情绪分析请求出错:', error);
+            
+            // 添加错误消息
+            this.chatMessages.push({
+              content: '抱歉，我暂时无法分析您的情绪。请稍后再试或尝试不同的表达方式�?,
+              isUser: false
+            });
+            
+            this.showNotification('情绪分析失败，请稍后再试', 'danger');
+          })
+          .finally(() => {
+            this.isLoading = false;
+            this.isEmotionAnalysing = false;
+            
+            // 滚动到底�?
+            this.$nextTick(() => {
+              const chatContainer = document.querySelector('.chat-messages');
+              if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+              }
+            });
+          });
+      },
+      
+      /**
+       * 获取基于情绪的音乐推�?
+       */
+      getEmotionBasedMusic(emotion) {
+        if (!this.user || !this.user.isLoggedIn || !emotion) {
+          console.error('getEmotionBasedMusic: 缺少必要参数');
+          return;
+        }
+        
+        this.isLoading = true;
+        
+        // 确保先设置默认推荐，防止undefined错误
+        this.recommendations = [
+          {
+            track_id: 'default1',
+            track_name: '情绪推荐歌曲1',
+            artist_name: '情绪艺术�?',
+            explanation: `基于您的${emotion}情绪推荐`,
+            title: '情绪推荐歌曲1',
+            artist: '情绪艺术�?',
+            album_image: '/static/img/default-album.png'
+          },
+          {
+            track_id: 'default2',
+            track_name: '情绪推荐歌曲2',
+            artist_name: '情绪艺术�?',
+            explanation: `基于您的${emotion}情绪推荐`,
+            title: '情绪推荐歌曲2',
+            artist: '情绪艺术�?',
+            album_image: '/static/img/default-album.png'
+          }
+        ];
+        
+        axios.get(`/api/emotion/music?user_id=${this.user.id}&emotion=${emotion}`)
+          .then(response => {
+            // 确保返回数据是数�?
+            if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+              // 确保每个推荐对象都有title和artist字段
+              const processedRecommendations = response.data.map(rec => {
+                // 确保rec是一个对�?
+                if (!rec || typeof rec !== 'object') {
+                  return {
+                    track_id: '未知ID',
+                    track_name: '未知标题',
+                    artist_name: '未知艺术�?,
+                    title: '未知标题',
+                    artist: '未知艺术�?,
+                    explanation: `基于您的${emotion}情绪推荐`,
+                    album_image: '/static/img/default-album.png'
+                  };
+                }
+                
+                return {
+                  ...rec,
+                  track_id: rec.track_id || rec.id || `未知ID_${Math.random()}`,
+                  track_name: rec.track_name || rec.title || '未知标题',
+                  artist_name: rec.artist_name || rec.artist || '未知艺术�?,
+                  title: rec.track_name || rec.title || '未知标题',
+                  artist: rec.artist_name || rec.artist || '未知艺术�?,
+                  explanation: rec.explanation || `基于您的${emotion}情绪推荐`,
+                  album_image: rec.album_image || rec.image || '/static/img/default-album.png'
+                };
+              });
+              
+              // 更新推荐列表
+              this.recommendations = processedRecommendations;
+            }
+            
+            // 如果用户当前在聊天标签，可以提供一个按钮切换到推荐标签
+            if (this.currentTab === 'chat') {
+              // 添加一个提示，可以用按钮切�?
+              this.showNotification('情绪音乐已准备好，可在推荐标签查�?, 'success');
+            }
+          })
+          .catch(error => {
+            console.error('获取情绪音乐失败:', error);
+            this.showNotification('获取情绪音乐推荐失败，使用默认推�?, 'danger');
+            // 默认推荐已在方法开始时设置
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 获取聊天历史
+      getChatHistory() {
+        if (!this.user.isLoggedIn) return;
+        
+        this.isLoading = true;
+        
+        axios.get(`/api/chat/history?user_id=${this.user.id}`)
+          .then(response => {
+            this.chatHistory = response.data.history || [];
+            console.log('已加载聊天历�?', this.chatHistory.length);
+            
+            // 转换为兼容模板的格式
+            this.chatMessages = this.chatHistory.flatMap(record => [
+              { content: record.user_message, isUser: true },
+              { content: record.ai_response, isUser: false }
+            ]);
+          })
+          .catch(error => {
+            console.error('加载聊天历史失败:', error);
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      /**
+       * 使用预设提示消息
+       */
+      usePrompt(prompt) {
+        if (!prompt) return;
+        
+        this.chatInput = prompt;
+        
+        this.$nextTick(() => {
+          // 让输入框获取焦点
+          const inputElement = document.querySelector('.chat-input-container input');
+          if (inputElement) {
+            inputElement.focus();
+          }
+          
+          // 也可以直接发送消�?
+          // this.sendChatMessage();
+        });
+      },
+      
+      // 提交反馈
+      submitFeedback(songId, feedbackType) {
+        if (!this.user.isLoggedIn) return;
+        
+        axios.post('/api/feedback', {
+          user_id: this.user.id,
+          track_id: songId,
+          feedback_type: feedbackType
+        })
+          .then(response => {
+            console.log('反馈提交成功:', songId, feedbackType);
+            this.showNotification('感谢您的反馈�?, 'success');
+            
+            // 从推荐列表中移除该歌曲并添加淡出动画
+            if (feedbackType === 'dislike') {
+              const index = this.recommendations.findIndex(song => song.track_id === songId);
+              if (index !== -1) {
+                const songElement = document.querySelectorAll('.card')[index];
+                if (songElement) {
+                  songElement.classList.add('animate__animated', 'animate__fadeOut');
+                  
+                  setTimeout(() => {
+                    this.recommendations.splice(index, 1);
+                  }, 500);
+                }
+              }
+            }
+          })
+          .catch(error => {
+            console.error('反馈提交失败:', error);
+            this.showNotification('反馈提交失败，请重试', 'danger');
+          });
+      },
+      
+      // 提交满意度评�?
+      submitEvaluation() {
+        if (!this.user.isLoggedIn || !this.isEvaluationComplete) return;
+        
+        this.isLoading = true;
+        
+        axios.post('/api/evaluation', {
+          user_id: this.user.id,
+          responses: this.evaluationResponses,
+          comment: this.evaluationComment
+        })
+          .then(response => {
+            console.log('满意度评估提交成�?', this.evaluationResponses);
+            this.showNotification('感谢您的评价�?, 'success');
+            this.evaluationSubmitted = true;
+            this.satisfactionLevel = 0;
+            this.feedbackText = '';
+          })
+          .catch(error => {
+            console.error('满意度评估提交失�?', error);
+            this.showNotification('评价提交失败，请重试', 'danger');
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 显示通知
+      showNotification(message, type = 'info') {
+        this.notification.message = message;
+        this.notification.type = type;
+        this.notification.isVisible = true;
+        
+        // 添加到通知列表
+        const notificationType = type === 'danger' ? 'is-danger' : 
+                                type === 'warning' ? 'is-warning' : 
+                                type === 'success' ? 'is-success' : 'is-info';
+        this.notifications.push({
+          message: message,
+          type: notificationType
+        });
+        
+        // 3秒后自动隐藏通知
+        setTimeout(() => {
+          this.notification.isVisible = false;
+        }, 3000);
+        
+        // 3秒后从通知列表中移�?
+        setTimeout(() => {
+          if (this.notifications.length > 0) {
+            this.notifications.shift();
+          }
+        }, 3000);
+      },
+      
+      // 用户注册
+      register() {
+        if (!this.username.trim()) {
+          this.loginErrorMessage = '请输入用户名';
+          return;
+        }
+        
+        if (!this.email.trim()) {
+          this.loginErrorMessage = '请输入邮�?;
+          return;
+        }
+        
+        if (!this.password.trim()) {
+          this.loginErrorMessage = '请输入密�?;
+          return;
+        }
+        
+        this.isLoading = true;
+        this.loginErrorMessage = '';
+        
+        // 准备注册数据
+        const registerData = {
+          username: this.username,
+          password: this.password,
+          email: this.email
+        };
+        
+        // 发送注册请�?
+        axios.post('/api/user/register', registerData)
+          .then(response => {
+            console.log('注册成功:', response.data);
+            
+            if (response.data && response.data.user_id) {
+              // 注册成功，自动登�?
+              this.user = {
+                id: response.data.user_id,
+                username: response.data.username || this.username,
+                email: this.email,
+                isLoggedIn: true,
+                isDeveloper: response.data.is_developer || false
+              };
+              
+              // 保存到本地存�?
+              localStorage.setItem('userId', this.user.id);
+              localStorage.setItem('username', this.user.username);
+              localStorage.setItem('email', this.user.email);
+              localStorage.setItem('isLoggedIn', 'true');
+              localStorage.setItem('isDeveloper', this.user.isDeveloper ? 'true' : 'false');
+              
+              // 显示成功通知
+              this.showNotification('注册并登录成功！', 'success');
+              
+              // 加载初始数据
+              this.loadSampleSongs();
+              
+              // 添加AI欢迎消息
+              this.chatMessages.push({
+                content: `欢迎�?{this.username}！我是您的AI音乐助手。请问您想了解什么音乐信息或获取什么推荐？`,
+                isUser: false
+              });
+            } else {
+              // 注册成功但没有返回用户ID，尝试登�?
+              this.login();
+            }
+          })
+          .catch(error => {
+            console.error('注册失败:', error);
+            
+            // 显示错误消息
+            if (error.response && error.response.data && error.response.data.error) {
+              this.loginErrorMessage = error.response.data.error;
+            } else {
+              this.loginErrorMessage = '注册失败，请重试';
+            }
+            
+            this.isLoading = false;
+          });
+      },
+      
+      /**
+       * 用户登录
+       */
+      login: function() {
+        console.log("开始登录流程，当前用户名：", this.username, "当前绑定字段:", document.querySelector("input[v-model='username']") ? true : false);
+        
+        if (this.user && this.user.isLoggedIn) {
+            console.log("用户已登录，跳过登录过程");
+            return;
+        }
+        
+        if (!this.username) {
+            // 修复错误：确保即使在英文界面下也能访问错误消�?
+            let errorMessage = "请输入用户名";
+            
+            // 安全地访问errors对象
+            if (this.content && this.content[this.currentLanguage] && 
+                this.content[this.currentLanguage].errors && 
+                this.content[this.currentLanguage].errors.emptyUsername) {
+                errorMessage = this.content[this.currentLanguage].errors.emptyUsername;
+            }
+            
+            this.addNotification(errorMessage, 'is-danger');
+            return;
+        }
+        
+        // 开始登录流�?
+        this.isLoading = true;
+        
+        // 准备登录数据
+        var loginData = {
+            username: this.username,
+            email: this.email || "",
+            password: this.password || ""
+        };
+        
+        console.log("登录数据:", loginData);
+        
+        // 开发者登录逻辑简�?
+        if (this.isDeveloperMode && !this.password) {
+            loginData.password = "test123";
+        }
+        
+        axios.post('/api/user/login', loginData)
+            .then(response => {
+                console.log("登录成功:", response.data);
+                
+                // 确保用户数据包含所有必要字�?
+                const userData = {
+                    username: response.data.username || this.username,
+                    email: response.data.email || this.email || "",
+                    isDeveloper: response.data.is_developer || false,
+                    isLoggedIn: true,
+                    id: response.data.id || response.data.user_id || Date.now()
+                };
+                
+                // 保存用户会话到本地存�?
+                localStorage.setItem('user', JSON.stringify(userData));
+                localStorage.setItem('user_session', JSON.stringify(userData)); // 同时保存到两个key
+                localStorage.setItem('userId', userData.id);
+                localStorage.setItem('username', userData.username);
+                localStorage.setItem('isLoggedIn', 'true');
+                
+                // 更新应用状�?
+                this.user = userData;
+                this.username = userData.username;
+                this.isDeveloperMode = userData.isDeveloper;
+                
+                // 重置登录表单
+                this.loginUsername = "";
+                this.password = "";
+                this.loginEmail = "";
+                this.isRegistering = false;
+                
+                // 加载初始数据
+                this.loadInitialData();
+                
+                // 修改这里：登录成功后显示欢迎页面
+                this.currentTab = 'welcome';
+                
+                // 安全地访问成功消�?
+                let successMessage = "登录成功�?;
+                if (this.content && this.content[this.currentLanguage] && 
+                    this.content[this.currentLanguage].success && 
+                    this.content[this.currentLanguage].success.login) {
+                    successMessage = this.content[this.currentLanguage].success.login;
+                }
+                
+                this.addNotification(successMessage, 'is-success');
+                
+                // 向控制台打印登录成功信息
+                console.log("用户登录成功", this.user);
+                console.log("当前Tab:", this.currentTab);
+            })
+            .catch(error => {
+                console.error("登录错误:", error.response ? error.response.data : error);
+                
+                // 安全地访问错误消�?
+                let errorMessage = "登录失败，请检查您的用户名和密�?;
+                if (this.content && this.content[this.currentLanguage] && 
+                    this.content[this.currentLanguage].errors && 
+                    this.content[this.currentLanguage].errors.loginFailed) {
+                    errorMessage = this.content[this.currentLanguage].errors.loginFailed;
+                }
+                
+                if (error.response && error.response.data && error.response.data.error) {
+                    errorMessage = error.response.data.error;
+                }
+                
+                this.addNotification(errorMessage, 'is-danger');
+            })
+            .finally(() => {
+                this.isLoading = false;
+            });
+      },
+      
+      /**
+       * 选择填写调查问卷
+       */
+      chooseSurvey: function() {
+        // 初始化调查问�?
+        this.surveyQuestions.find(q => q.id === 'music_genres').options = this.musicGenres;
+        this.surveyCompleted = false;
+        this.showWelcomeOptions = false;
+        this.showPreferencesSurvey = true;
+        this.currentTab = 'survey';
+      },
+      
+      /**
+       * 选择AI聊天
+       */
+      chooseAIChat: function() {
+        this.showWelcomeOptions = false;
+        this.currentTab = 'chat';
+        this.loadChatHistory();
+      },
+      
+      /**
+       * 回答调查问题
+       */
+      answerQuestion: function(questionId, answer) {
+        const question = this.surveyQuestions.find(q => q.id === questionId);
+        if (!question) return;
+        
+        if (question.type === 'single') {
+          // 单选题直接设置答案
+          question.answer = answer;
+        } else if (question.type === 'multiple') {
+          // 多选题处理选中/取消选中
+          const index = question.answer.indexOf(answer);
+          if (index === -1) {
+            // 添加选项
+            question.answer.push(answer);
+          } else {
+            // 移除选项
+            question.answer.splice(index, 1);
+          }
+        }
+      },
+      
+      /**
+       * 提交调查问卷
+       */
+      submitSurvey: function() {
+        // 收集用户偏好
+        this.preferences = [];
+        
+        // 将问卷答案转换为偏好
+        this.surveyQuestions.forEach(question => {
+          if (question.id === 'music_genres' && question.answer.length > 0) {
+            this.selectedGenres = [...question.answer];
+          }
+          
+          if (question.answer && 
+             (question.type === 'single' && question.answer !== '') || 
+             (question.type === 'multiple' && question.answer.length > 0)) {
+            this.preferences.push({
+              preference_id: question.id,
+              preference_type: question.type,
+              preference_value: JSON.stringify(question.answer)
+            });
+          }
+        });
+        
+        // 保存用户偏好到本地存�?
+        localStorage.setItem('user_preferences', JSON.stringify(this.preferences));
+        
+        // 标记调查完成
+        this.surveyCompleted = true;
+        this.showPreferencesSurvey = false;
+        
+        // 加载个性化推荐
+        this.getPersonalizedRecommendations();
+        
+        // 显示通知
+        this.showNotification(
+          this.currentLanguage === 'zh' ? '感谢您完成调查！' : 'Thank you for completing the survey!',
+          'success'
+        );
+      },
+      
+      /**
+       * 跳过调查
+       */
+      skipSurvey: function() {
+        this.surveyCompleted = true;
+        this.showPreferencesSurvey = false;
+        
+        // 加载默认推荐
+        this.recommendations = [...this.defaultRecommendations];
+        this.currentTab = 'recommendations';
+        
+        // 通知用户
+        this.showNotification(
+          this.currentLanguage === 'zh' ? '已跳过调�? : 'Survey skipped',
+          'info'
+        );
+      },
+      
+      /**
+       * 获取个性化推荐
+       */
+      getPersonalizedRecommendations: function() {
+        // 设置加载状�?
+        this.isLoading = true;
+        this.recommendations = [...this.defaultRecommendations]; // 设置默认�?
+        
+        // 准备请求参数
+        const params = {
+          user_id: this.user.id,
+          genres: this.selectedGenres.join(',')
+        };
+        
+        // 切换到推荐选项�?
+        this.currentTab = 'recommendations';
+        
+        // 向API发送请�?
+        axios.get('/api/recommendations/personalized', { params: params })
+          .then(response => {
+            this.isLoading = false;
+            
+            if (response.data && response.data.recommendations && response.data.recommendations.length > 0) {
+              // 确保每个推荐项都有title和artist字段
+              this.recommendations = response.data.recommendations.map(rec => {
+                return {
+                  track_id: rec.track_id || '',
+                  track_name: rec.track_name || '',
+                  artist_name: rec.artist_name || '',
+                  title: rec.title || rec.track_name || '',
+                  artist: rec.artist || rec.artist_name || '',
+                  explanation: rec.explanation || '根据您的偏好推荐'
+                };
+              });
+              
+              // 记录加载的推荐数�?
+              console.log('已加�? + this.recommendations.length + '条个性化推荐');
+              
+              // 添加动画效果
+              setTimeout(() => {
+                const cards = document.querySelectorAll('.recommendation-card');
+                cards.forEach((card, index) => {
+                  setTimeout(() => {
+                    card.classList.add('show');
+                  }, index * 100);
+                });
+              }, 100);
+            } else {
+              // 推荐加载失败，使用默认推�?
+              console.log('未能获取个性化推荐，使用默认推�?);
+            }
+          })
+          .catch(error => {
+            this.isLoading = false;
+            console.error('获取个性化推荐出错:', error);
+            
+            // 显示错误通知
+            this.showNotification(
+              this.currentLanguage === 'zh' ? '获取推荐失败，请稍后再试' : 'Failed to get recommendations, please try again later',
+              'error'
+            );
+          });
+      },
+      
+      // 登出用户
+      logoutUser: function() {
+        // 清除用户状�?
+        this.user.id = null;
+        this.user.username = '';
+        this.user.email = '';
+        this.user.isLoggedIn = false;
+        this.user.isDeveloper = false;
+        
+        // 清除本地存储
+        localStorage.removeItem('user');
+        localStorage.removeItem('user_preferences');
+        
+        // 重置界面状�?
+        this.showLoginForm = true;
+        this.showWelcomeOptions = false;
+        this.showPreferencesSurvey = false;
+        this.currentTab = 'welcome';
+        this.selectedGenres = [];
+        
+        // 清空问卷答案
+        this.surveyQuestions.forEach(question => {
+          if (question.type === 'single') {
+            question.answer = '';
+          } else {
+            question.answer = [];
+          }
+        });
+        
+        // 显示通知
+        this.showNotification(
+          this.currentLanguage === 'zh' ? '已成功退出登�? : 'Successfully logged out',
+          'info'
+        );
+      },
+      
+      // 播放音频预览
+      playPreview: function(previewUrl, trackName) {
+        if (!previewUrl) {
+          this.showNotification(
+            this.currentLanguage === 'zh' ? '无法播放，预览链接不可用' : 'Cannot play, preview link unavailable',
+            'error'
+          );
+          return;
+        }
+        
+        // 停止当前播放的音�?
+        if (this.currentAudio) {
+          this.currentAudio.pause();
+          this.currentAudio = null;
+        }
+        
+        // 创建新音频对�?
+        const audio = new Audio(previewUrl);
+        this.currentAudio = audio;
+        
+        // 开始播�?
+        audio.play().then(() => {
+          this.showNotification(
+            this.currentLanguage === 'zh' ? '正在播放: ' + (trackName || '音乐') : 'Now playing: ' + (trackName || 'music'),
+            'info'
+          );
+        }).catch(error => {
+          console.error('播放音频出错:', error);
+          this.showNotification(
+            this.currentLanguage === 'zh' ? '播放失败，请稍后再试' : 'Playback failed, please try again later',
+            'error'
+          );
+        });
+        
+        // 播放结束时清�?
+        audio.onended = () => {
+          this.currentAudio = null;
+        };
+      },
+      
+      // 处理图片加载错误
+      handleImageError: function(event) {
+        event.target.src = 'static/img/music-pattern.svg';
+      },
+      
+      // 播放歌曲预览
+      playSongPreview(previewUrl) {
+        this.playPreview(previewUrl);
+      },
+      
+      // 对单首歌曲评�?
+      rateSongItem(song, rating) {
+        if (!song || !song.track_id) return;
+        
+        // 设置歌曲评分
+        song.rating = rating;
+        
+        // 调用评分API
+        this.rateSong(song.track_id, rating);
+      },
+      
+      // 点赞歌曲
+      likeSong(song) {
+        if (!song || !song.track_id) return;
+        
+        this.submitFeedback(song.track_id, 'like');
+        this.showNotification('感谢您的反馈�?, 'success');
+      },
+      
+      // 点踩歌曲
+      dislikeSong(song) {
+        if (!song || !song.track_id) return;
+        
+        this.submitFeedback(song.track_id, 'dislike');
+        this.showNotification('感谢您的反馈！我们会改进推荐', 'info');
+      },
+      
+      // 加载聊天历史
+      loadChatHistory() {
+        // 如果用户没有登录，不加载聊天历史
+        if (!this.user.isLoggedIn) return;
+        
+        // 调用获取聊天历史的API
+        this.getChatHistory();
+      },
+      
+      // 移除通知
+      removeNotification(index) {
+        this.notifications.splice(index, 1);
+      },
+      
+      /**
+       * 跳转到问卷调查页�?
+       */
+      goToQuestionnaire() {
+        // 保存当前用户ID到本地存储，以便问卷页面使用
+        if (this.user && this.user.id) {
+          localStorage.setItem('userId', this.user.id);
+        }
+        // 跳转到问卷页�?
+        window.location.href = '/questionnaire';
+      },
+      
+      /**
+       * 获取通知图标
+       */
+      getNotificationIcon(type) {
+        switch(type) {
+          case 'success':
+            return 'fas fa-check-circle';
+          case 'error':
+            return 'fas fa-exclamation-circle';
+          case 'warning':
+            return 'fas fa-exclamation-triangle';
+          default:
+            return 'fas fa-info-circle';
+        }
+      },
+      
+      // 添加通知
+      addNotification(message, type = 'is-info') {
+        console.log("添加通知:", message, type);
+        if (!this.notifications) {
+          this.notifications = [];
+        }
+        this.notifications.push({
+          message: message,
+          type: type
+        });
+        
+        // 同时更新单一通知对象，兼容旧代码
+        this.notification = {
+          message: message,
+          type: type.replace('is-', ''),
+          isVisible: true
+        };
+        
+        // 3秒后自动移除通知
+        setTimeout(() => {
+          if (this.notifications && this.notifications.length > 0) {
+            this.notifications.shift();
+          }
+          this.notification.isVisible = false;
+        }, 3000);
+      },
+      
+      // 加载用户评分记录
+      loadUserRatings() {
+        if (!this.user.isLoggedIn) return;
+        
+        this.isLoading = true;
+        
+        axios.get(`/api/user_ratings/${this.user.id}`)
+          .then(response => {
+            this.userRatings = response.data || {};
+            console.log('已加载用户评�?', Object.keys(this.userRatings).length);
+          })
+          .catch(error => {
+            console.error('加载用户评分失败:', error);
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 加载所有用�?(管理员功�?
+      loadAllUsers() {
+        if (!this.user.isDeveloper) {
+          this.showNotification('只有开发者才能查看用户列�?, 'warning');
+          this.currentTab = 'home';
+          return;
+        }
+        
+        this.isLoading = true;
+        
+        axios.get(`/api/user/all?admin_id=${this.user.id}`)
+          .then(response => {
+            this.allUsers = response.data || [];
+            console.log('已加载所有用�?', this.allUsers.length);
+          })
+          .catch(error => {
+            console.error('加载用户列表失败:', error);
+            this.showNotification('加载用户列表失败', 'error');
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 添加新用�?(管理员功�?
+      addUser() {
+        if (!this.user.isDeveloper) {
+          this.showNotification('只有开发者才能添加用�?, 'warning');
+          return;
+        }
+        
+        if (!this.newUser.username.trim()) {
+          this.showNotification('请输入用户名', 'warning');
+          return;
+        }
+        
+        if (!this.newUser.password.trim()) {
+          this.showNotification('请输入密�?, 'warning');
+          return;
+        }
+        
+        this.isLoading = true;
+        
+        // 准备添加用户的数�?
+        const userData = {
+          admin_id: this.user.id,
+          username: this.newUser.username,
+          password: this.newUser.password,
+          email: this.newUser.email,
+          is_developer: this.newUser.isDeveloper
+        };
+        
+        axios.post('/api/user/register', userData)
+          .then(response => {
+            console.log('添加用户成功:', response.data);
+            this.showNotification('添加用户成功', 'success');
+            
+            // 重置表单
+            this.newUser = {
+              username: '',
+              email: '',
+              password: '',
+              isDeveloper: false
+            };
+            
+            // 重新加载用户列表
+            this.loadAllUsers();
+          })
+          .catch(error => {
+            console.error('添加用户失败:', error);
+            
+            // 显示错误消息
+            if (error.response && error.response.data && error.response.data.error) {
+              this.showNotification(error.response.data.error, 'error');
+            } else {
+              this.showNotification('添加用户失败，请重试', 'error');
+            }
+          })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      
+      // 编辑用户 (管理员功�?
+      editUser(user) {
+        this.editingUser = { ...user };
+        
+        // 这里可以打开一个编辑模态框
+        // 为简化起见，我们直接在控制台中显示一条消�?
+        console.log('编辑用户:', this.editingUser);
+        this.showNotification('编辑用户功能待实�?, 'info');
+      },
+      
+      // 删除用户 (管理员功�?
+      deleteUser(user) {
+        if (user.id === 'dev-001') {
+          this.showNotification('不能删除主开发者账�?, 'warning');
+          return;
+        }
+        
+        if (confirm(`确定要删除用�?${user.username} 吗？`)) {
+          this.isLoading = true;
+          
+          axios.delete(`/api/user/delete?admin_id=${this.user.id}&user_id=${user.id}`)
+            .then(response => {
+              console.log('删除用户成功:', response.data);
+              this.showNotification('删除用户成功', 'success');
+              
+              // 从列表中移除该用�?
+              this.allUsers = this.allUsers.filter(u => u.id !== user.id);
+            })
+            .catch(error => {
+              console.error('删除用户失败:', error);
+              this.showNotification('删除用户失败，请重试', 'error');
+            })
+            .finally(() => {
+              this.isLoading = false;
+            });
+        }
+      },
+      
+      /**
+       * 用户登出
+       */
+      logout: function() {
+        console.log("执行登出操作");
+        // 调用logoutUser方法
+        this.logoutUser();
+        
+        // 清除所有相关存�?
+        localStorage.removeItem('user');
+        localStorage.removeItem('user_session');
+        localStorage.removeItem('userId');
+        localStorage.removeItem('username');
+        localStorage.removeItem('email');
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('isDeveloper');
+        
+        // 重置用户相关字段
+        this.username = '';
+        this.email = '';
+        this.password = '';
+        
+        // 添加登出成功通知
+        this.addNotification(
+          this.currentLanguage === 'zh' ? '已成功退出登�? : 'Successfully logged out',
+          'is-success'
+        );
+        
+        console.log("登出完成，用户状态：", this.user);
+      },
+      
+      // 查找并播放歌曲预�?
+      playSongPreview(previewUrl) {
+        console.log("尝试播放预览:", previewUrl);
+        
+        if (!previewUrl || previewUrl === "") {
+          this.showNotification("抱歉，该歌曲没有可用的预览�?, "warning");
+          return;
+        }
+        
+        // 使用现有的音频元素而不是创建新�?
+        const audioPlayer = document.getElementById('audio-player');
+        if (!audioPlayer) {
+          console.error("找不到音频播放器元素");
+          this.showNotification("音频播放器加载失�?, "error");
+          return;
+        }
+        
+        // 设置音频源并播放
+        audioPlayer.src = previewUrl;
+        audioPlayer.style.display = 'block'; // 显示音频播放�?
+        
+        // 播放失败时显示错�?
+        audioPlayer.onerror = (e) => {
+          console.error("音频播放错误:", e);
+          this.showNotification("播放预览时出错，请稍后再试�?, "error");
+        };
+        
+        // 尝试播放
+        try {
+          const playPromise = audioPlayer.play();
+          
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              this.showNotification("开始播放预�?, "success");
+            }).catch(error => {
+              console.error("播放失败:", error);
+              this.showNotification("播放被浏览器阻止，请点击页面后再�?, "warning");
+            });
+          }
+        } catch (e) {
+          console.error("播放异常:", e);
+          this.showNotification("播放出现异常", "error");
+        }
+        
+        // 播放完成后隐藏播放器
+        audioPlayer.onended = () => {
+          audioPlayer.style.display = 'none';
+        };
+      },
+      
+      // 格式化聊天消息，检测并转换音乐链接为可点击的播放按�?
+      formatChatMessage(message) {
+        // 检查消息中是否包含预览URL的模�?
+        const urlPattern = /(https?:\/\/[^\s]+)/g;
+        const spotifyPattern = /(https?:\/\/(?:open\.spotify\.com|api\.spotify\.com)[^\s]+)/g;
+        
+        // 替换Spotify链接为可点击的播放按�?
+        if (spotifyPattern.test(message)) {
+            return message.replace(spotifyPattern, url => {
+                return `<div class="music-preview-link">
+                        <a href="${url}" target="_blank" class="music-link">${url}</a>
+                        <button class="button is-small is-primary play-button" onclick="app.playSongPreview('${url}')">
+                            <span class="icon"><i class="fas fa-play"></i></span> 播放
+                        </button>
+                    </div>`;
+            });
+        }
+        
+        // 替换普通URL为可点击链接
+        if (urlPattern.test(message)) {
+            return message.replace(urlPattern, url => {
+                // 检查URL是否为音频格�?
+                if (url.match(/\.(mp3|wav|ogg)$/i)) {
+                    return `<div class="music-preview-link">
+                            <a href="${url}" target="_blank" class="music-link">${url}</a>
+                            <button class="button is-small is-primary play-button" onclick="app.playSongPreview('${url}')">
+                                <span class="icon"><i class="fas fa-play"></i></span> 播放
+                            </button>
+                        </div>`;
+                } else {
+                    return `<a href="${url}" target="_blank">${url}</a>`;
+                }
+            });
+        }
+        
+        return message;
+      },
+      
+      // 添加到消息历史并显示
+      addChatMessage(message, isUser = false) {
+        // 格式化消息中的链�?
+        const formattedContent = isUser ? message : this.formatChatMessage(message);
+        
+        this.chatMessages.push({
+            content: formattedContent,
+            isUser: isUser,
+            time: new Date().toLocaleTimeString()
+        });
+        
+        // 滚动到最新消�?
+        this.$nextTick(() => {
+            const chatContainer = this.$refs.chatMessages;
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        });
+      },
+      
+      // 保存聊天记录
+      saveChatHistory() {
+        // 将聊天记录保存到本地存储
+        localStorage.setItem('chatHistory', JSON.stringify(this.chatHistory));
+      },
+      
+      // 检查消息是否包含情绪关键词
+      containsEmotionKeywords(message) {
+        return this.emotionKeywords.some(keyword => message.includes(keyword));
+      },
+      
+      setupEventListeners() {
+        console.log('设置游戏事件监听�?..');
+        
+        // 移除以前的事件监听器
+        if (this._keydownHandler) {
+          document.removeEventListener('keydown', this._keydownHandler);
+          console.log('已移除旧的键盘事件监听器');
+        }
+        
+        // 如果已经设置过事件监听器，不要重复设置按钮事�?
+        if (this._eventListenersSet) {
+          // 只重新绑定键盘事�?
+          this._keydownHandler = this._createKeydownHandler();
+          document.addEventListener('keydown', this._keydownHandler);
+          console.log('已添加新的键盘事件监听器');
+          return;
+        }
+        
+        // 键盘控制
+        this._keydownHandler = this._createKeydownHandler();
+        
+        // 添加键盘事件，确保在整个文档上监�?
+        document.addEventListener('keydown', this._keydownHandler);
+        console.log('已添加新的键盘事件监听器');
+        
+        // 开始游戏按�?
+        const startButton = document.getElementById('game-start');
+        console.log('查找开始游戏按�?', startButton ? '成功' : '失败');
+        
+        if (startButton) {
+          console.log('找到开始游戏按钮，添加点击事件...');
+          // 移除所有现有事件监听器，防止重�?
+          const newStartButton = startButton.cloneNode(true);
+          startButton.parentNode.replaceChild(newStartButton, startButton);
+          
+          // 添加新的点击事件处理程序
+          this._startButtonHandler = (e) => {
+            console.log('开始游戏按钮被点击!', e);
+            e.preventDefault();
+            e.stopPropagation();
+            this.startGame();
+          };
+          
+          // 同时添加鼠标点击和触摸事件，增加兼容�?
+          newStartButton.addEventListener('click', this._startButtonHandler);
+          newStartButton.addEventListener('touchend', this._startButtonHandler);
+          
+          // 添加额外的调试信�?
+          newStartButton.style.pointerEvents = 'auto';
+          newStartButton.style.cursor = 'pointer';
+          newStartButton.setAttribute('data-listener-set', 'true');
+          
+          // 添加内联点击事件，作为备�?
+          newStartButton.onclick = (e) => {
+            console.log('游戏按钮内联点击事件触发');
+            this._startButtonHandler(e);
+          };
+          
+          // 强调按钮可点击�?
+          newStartButton.style.zIndex = '1000';
+          
+          console.log('开始游戏按钮事件已设置');
+        } else {
+          console.error('找不到开始游戏按�?');
+        }
+        
+        // 完成游戏按钮
+        const finishButton = document.getElementById('game-finish');
+        if (finishButton) {
+          const newFinishButton = finishButton.cloneNode(true);
+          finishButton.parentNode.replaceChild(newFinishButton, finishButton);
+          
+          this._finishButtonHandler = () => {
+            // 退出全�?
+            if (document.fullscreenElement) {
+              document.exitFullscreen().catch(err => {
+                console.error('无法退出全屏模�?', err);
+              });
+            }
+            
+            this.finishGame();
+          };
+          
+          newFinishButton.addEventListener('click', this._finishButtonHandler);
+          newFinishButton.setAttribute('data-listener-set', 'true');
+        }
+        
+        this._eventListenersSet = true;
+      },
+      
+      // 创建键盘事件处理函数
+      _createKeydownHandler() {
+        return (e) => {
+          console.log('键盘事件:', e.key, '游戏运行状�?', this.gameRunning);
+          
+          if (!this.gameRunning || !this.player) return;
+          
+          // 为了增加运动的响应性，我们立即更新玩家位置并重�?
+          let needsRedraw = false;
+          
+          if (e.key === 'ArrowLeft') {
+            this.player.x -= this.player.speed;
+            console.log('玩家左移:', this.player.x);
+            needsRedraw = true;
+          }
+          
+          if (e.key === 'ArrowRight') {
+            this.player.x += this.player.speed;
+            console.log('玩家右移:', this.player.x);
+            needsRedraw = true;
+          }
+          
+          if (e.key === 'ArrowUp' && this.player.grounded) {
+            this.player.dy = -12; // 跳跃力度
+            this.player.grounded = false;
+            console.log('玩家跳跃:', this.player.dy);
+            needsRedraw = true;
+          }
+          
+          // 确保玩家不会超出画布
+          if (this.player.x < 0) this.player.x = 0;
+          if (this.player.x + this.player.width > this.canvas.width) {
+            this.player.x = this.canvas.width - this.player.width;
+          }
+          
+          // 按ESC键退出全�?
+          if (e.key === 'Escape' && document.fullscreenElement) {
+            document.exitFullscreen().catch(err => {
+              console.error('无法退出全屏模�?', err);
+            });
+          }
+          
+          // 如果有位置更新，立即重绘游戏画面
+          if (needsRedraw && this.canvas && this.ctx) {
+            // 强制重绘一�?
+            cancelAnimationFrame(this._gameLoopId);
+            this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+          }
+        };
+      },
+      
+      updatePreferenceDisplay() {
+        try {
+          const list = document.getElementById('preference-list');
+          if (!list) {
+            console.log('偏好列表元素不存�?);
+            return;
+          }
+          
+          // 清空列表
+          list.innerHTML = '';
+          
+          // 获取唯一偏好
+          const uniquePreferences = [...new Set(this.preferences)];
+          
+          // 为每个偏好创建一个列表项
+          uniquePreferences.forEach(prefName => {
+            // 找到对应的音乐风�?
+            const genre = this.findGenreByName(prefName);
+            
+            const item = document.createElement('li');
+            
+            if (genre) {
+              // 如果找到了风格信息，使用详细信息
+              item.innerHTML = `${genre.icon} ${prefName}`;
+              item.style.backgroundColor = genre.color;
+            } else {
+              // 否则只显示名�?
+              item.innerHTML = prefName;
+              item.style.backgroundColor = '#333333';
+            }
+            
+            // 添加样式
+            item.style.padding = '8px 12px';
+            item.style.margin = '5px 0';
+            item.style.borderRadius = '4px';
+            item.style.color = 'white';
+            item.style.listStyleType = 'none';
+            
+            list.appendChild(item);
+          });
+          
+          // 如果收集了足够的偏好，显示完成按�?
+          if (uniquePreferences.length >= 5) {
+            const finishButton = document.getElementById('game-finish');
+            if (finishButton) {
+              finishButton.classList.remove('is-hidden');
+            }
+          }
+        } catch (error) {
+          console.error('更新偏好显示时出�?', error);
+        }
+      },
+      
+      // 通过名称查找音乐风格
+      findGenreByName(name) {
+        const genres = [
+          { name: '流行音乐', icon: '🎵', color: '#FF5733' },
+          { name: '摇滚', icon: '🤘', color: '#C70039' },
+          { name: '古典', icon: '🎻', color: '#900C3F' },
+          { name: '爵士', icon: '🎷', color: '#581845' },
+          { name: '电子', icon: '🎧', color: '#FFC300' },
+          { name: '嘻哈', icon: '🎤', color: '#DAF7A6' },
+          { name: '民谣', icon: '🪕', color: '#FF5733' },
+          { name: '蓝调', icon: '🎸', color: '#C70039' }
+        ];
+        
+        return genres.find(genre => genre.name === name);
+      },
+      
+      // 游戏循环
+      gameLoop() {
+        try {
+          // 确保必要的对象存�?
+          if (!this.canvas || !this.ctx || !this.player) {
+            console.error('gameLoop: 缺少必要对象', {
+              canvas: !!this.canvas,
+              ctx: !!this.ctx,
+              player: !!this.player
+            });
+            return;
+          }
+          
+          // 清除画布
+          this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+          
+          // 绘制背景 - 添加背景色以避免黑屏
+          this.ctx.fillStyle = '#191919';
+          this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+          
+          // 绘制地面
+          this.ctx.fillStyle = '#333';
+          this.ctx.fillRect(0, this.ground + this.player.height, this.canvas.width, 2);
+          
+          // 如果游戏已暂停，显示暂停屏幕
+          if (this.gamePaused) {
+            this.drawPauseScreen();
+            return;
+          }
+          
+          // 如果游戏已完成，显示完成屏幕
+          if (this.gameCompleted) {
+            this.showFinishScreen();
+            return;
+          }
+          
+          // 更新玩家
+          this.updatePlayer();
+          
+          // 更新收集物位�?
+          this.updateCollectibles();
+          
+          // 检查碰�?
+          this.checkCollisions();
+          
+          // 更新粒子效果
+          if (typeof this.updateParticles === 'function') {
+            this.updateParticles();
+          }
+          
+          // 绘制玩家
+          this.drawPlayer();
+          
+          // 绘制收集�?
+          this.drawCollectibles();
+          
+          // 绘制粒子效果
+          if (typeof this.drawParticles === 'function') {
+            this.drawParticles();
+          }
+          
+          // 绘制分数
+          this.drawScore();
+          
+          // 绘制偏好显示
+          if (typeof this.drawPreferences === 'function') {
+            this.drawPreferences();
+          }
+          
+          // 继续游戏循环
+          if (this.gameRunning) {
+            this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+          }
+        } catch (error) {
+          console.error('游戏循环中出�?', error);
+          
+          // 尝试恢复游戏运行
+          if (this.gameRunning) {
+            setTimeout(() => {
+              this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+            }, 1000);
+          }
+        }
+      },
+      
+      // 绘制偏好
+      drawPreferences() {
+        try {
+          if (!this.ctx) return;
+          
+          this.ctx.fillStyle = 'white';
+          this.ctx.font = '16px Arial';
+          this.ctx.textAlign = 'left';
+          this.ctx.fillText('已收集的音乐偏好:', 10, 30);
+          
+          // 显示�?个已收集的偏�?
+          const uniquePreferences = [...new Set(this.preferences)];
+          const displayPreferences = uniquePreferences.slice(0, 5);
+          
+          displayPreferences.forEach((pref, index) => {
+            // 找到对应的音乐风�?
+            const genre = this.findGenreByName(pref);
+            
+            // 绘制背景
+            if (genre) {
+              this.ctx.fillStyle = genre.color;
+            } else {
+              this.ctx.fillStyle = '#333333';
+            }
+            
+            this.ctx.fillRect(10, 40 + index * 25, 150, 20);
+            
+            // 绘制文字
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '14px Arial';
+            
+            // 如果有图标，绘制图标和名�?
+            if (genre) {
+              this.ctx.fillText(`${genre.icon} ${pref}`, 15, 55 + index * 25);
+            } else {
+              this.ctx.fillText(pref, 15, 55 + index * 25);
+            }
+          });
+          
+          // 如果有更多偏好，显示"查看更多"
+          if (uniquePreferences.length > 5) {
+            this.ctx.fillStyle = 'yellow';
+            this.ctx.fillText(`+ 还有 ${uniquePreferences.length - 5} 项`, 15, 60 + 5 * 25);
+          }
+        } catch (error) {
+          console.error('绘制偏好时出�?', error);
+        }
+      },
+      
+      // 添加暂停画面绘制
+      drawPauseScreen() {
+        try {
+          if (!this.ctx || !this.canvas) return;
+          
+          // 绘制半透明背景
+          this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+          
+          // 绘制暂停文字
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = 'bold 36px Arial';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText('游戏暂停', this.canvas.width / 2, this.canvas.height / 2);
+          
+          // 绘制提示信息
+          this.ctx.font = '20px Arial';
+          this.ctx.fillText('按空格键继续', this.canvas.width / 2, this.canvas.height / 2 + 40);
+          
+          // 绘制已收集的偏好
+          this.drawPreferences();
+        } catch (error) {
+          console.error('绘制暂停画面时出�?', error);
+        }
+      },
+      
+      // 添加粒子效果创建
+      createParticles(x, y, color = '#ffff00') {
+        if (!this.particles) this.particles = [];
+        
+        // 创建爆发效果的粒�?
+        for (let i = 0; i < 15; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 3 + 1;
+          
+          this.particles.push({
+            x,
+            y,
+            radius: Math.random() * 4 + 1,
+            color,
+            speedX: Math.cos(angle) * speed,
+            speedY: Math.sin(angle) * speed,
+            life: 30 + Math.random() * 20
+          });
+        }
+      },
+      
+      // 更新粒子效果
+      updateParticles() {
+        if (!this.particles || !Array.isArray(this.particles)) return;
+        
+        for (let i = 0; i < this.particles.length; i++) {
+          let p = this.particles[i];
+          
+          // 更新粒子位置
+          p.x += p.speedX;
+          p.y += p.speedY;
+          
+          // 边界检�?
+          if (p.x < 0 || p.x > this.canvas.width) {
+            p.speedX *= -1;
+          }
+          
+          
+          if (p.y < 0 || p.y > this.canvas.height) {
+            p.speedY *= -1;
+          }
+        }
+      },
+      
+      // 绘制粒子效果
+      drawParticles() {
+        if (!this.ctx || !this.particles) return;
+        
+        this.particles.forEach(particle => {
+          // 设置透明度根据生命�?
+          const alpha = particle.life / 50;
+          
+          this.ctx.globalAlpha = alpha;
+          this.ctx.fillStyle = particle.color;
+          
+          // 绘制圆形粒子
+          this.ctx.beginPath();
+          this.ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+          this.ctx.fill();
+          
+          // 重置透明�?
+          this.ctx.globalAlpha = 1;
+        });
+      },
+      
+      // 游戏启动方法
+      startGame() {
+        try {
+          console.log('游戏开�?');
+          
+          // 如果没有canvas或上下文，尝试再次初始化
+          if (!this.canvas || !this.ctx) {
+            console.log('游戏未初始化，尝试初始化');
+            if (!this.init()) {
+              console.error('无法初始化游�?');
+              return;
+            }
+          }
+          
+          // 确保player对象已初始化
+          if (!this.player) {
+            console.log('玩家对象未初始化，重新创建玩�?);
+            this.player = {
+              x: 100,
+              y: 300,
+              width: 40,
+              height: 40,
+              speed: 5,
+              dy: 0,
+              jumping: false,
+              grounded: true
+            };
+            this.ground = this.canvas.height - this.player.height;
+          } else {
+            // 重置玩家位置
+            this.player.x = 100;
+            this.player.y = 300;
+            this.player.dy = 0;
+            this.player.grounded = true;
+          }
+          
+          // 进入全屏模式
+          this.toggleFullscreen();
+          
+          this.gameRunning = true;
+          this.gamePaused = false;
+          this.gameCompleted = false;
+          
+          // 添加重力参数
+          this.gravity = 0.5;
+          
+          // 定义音乐风格列表，确保存�?
+          this.genres = [
+            { name: '流行音乐', icon: '🎵', color: '#FF5733' },
+            { name: '摇滚', icon: '🤘', color: '#C70039' },
+            { name: '古典', icon: '🎻', color: '#900C3F' },
+            { name: '爵士', icon: '🎷', color: '#581845' },
+            { name: '电子', icon: '🎧', color: '#FFC300' },
+            { name: '嘻哈', icon: '🎤', color: '#DAF7A6' },
+            { name: '民谣', icon: '🪕', color: '#FF5733' },
+            { name: '蓝调', icon: '🎸', color: '#C70039' }
+          ];
+          
+          // 初始化或保留之前的用户偏�?
+          if (!this.preferences || this.preferences.length === 0) {
+            this.preferences = [];
+            // 加载之前保存的偏�?
+            if (typeof this.loadUserPreferences === 'function') {
+              this.loadUserPreferences();
+            }
+          }
+          
+          // 重置收集物和分数
+          this.collectibles = [];
+          this.particles = [];
+          this.score = 0;
+          
+          // 生成收集�?
+          this.generateCollectibles();
+          
+          // 更新偏好显示，如果方法存�?
+          if (typeof this.updatePreferenceDisplay === 'function') {
+            this.updatePreferenceDisplay();
+          }
+          
+          // 启动游戏循环
+          if (this._gameLoopId) {
+            cancelAnimationFrame(this._gameLoopId);
+          }
+          
+          // 立即执行一次绘制，确保屏幕不是黑的
+          this.gameLoop();
+          
+          // 隐藏开始按钮，显示完成按钮
+          const startButton = document.getElementById('game-start');
+          if (startButton) {
+            startButton.disabled = true;
+            console.log('已禁用开始游戏按�?);
+          }
+          
+          // 确保完成按钮隐藏
+          const finishButton = document.getElementById('game-finish');
+          if (finishButton) {
+            finishButton.classList.add('is-hidden');
+            console.log('已隐藏完成游戏按�?);
+          }
+          
+          // 重新绑定键盘事件
+          this.setupEventListeners();
+          
+          console.log('游戏启动成功!');
+          console.log('请使用方向键移动: �?�?左右移动, �?跳跃');
+        } catch (error) {
+          console.error('启动游戏时出�?', error);
+        }
+      },
+      
+      // 修改键盘事件处理器，添加暂停功能
+      _createKeydownHandler() {
+        return (e) => {
+          console.log('键盘事件:', e.key, '游戏运行状�?', this.gameRunning);
+          
+          if (!this.gameRunning) return;
+          
+          // 空格键暂�?继续游戏
+          if (e.key === ' ' || e.code === 'Space') {
+            this.gamePaused = !this.gamePaused;
+            console.log(this.gamePaused ? '游戏已暂�? : '游戏已继�?);
+            
+            // 如果继续游戏，立即启动游戏循�?
+            if (!this.gamePaused) {
+              cancelAnimationFrame(this._gameLoopId);
+              this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+            }
+            return;
+          }
+          
+          // 如果游戏暂停，不处理其他按键
+          if (this.gamePaused || !this.player) return;
+          
+          // 为了增加运动的响应性，我们立即更新玩家位置并重�?
+          let needsRedraw = false;
+          
+          if (e.key === 'ArrowLeft') {
+            this.player.x -= this.player.speed;
+            console.log('玩家左移:', this.player.x);
+            needsRedraw = true;
+          }
+          
+          if (e.key === 'ArrowRight') {
+            this.player.x += this.player.speed;
+            console.log('玩家右移:', this.player.x);
+            needsRedraw = true;
+          }
+          
+          if (e.key === 'ArrowUp' && this.player.grounded) {
+            this.player.dy = -12; // 跳跃力度
+            this.player.grounded = false;
+            console.log('玩家跳跃:', this.player.dy);
+            needsRedraw = true;
+          }
+          
+          // 确保玩家不会超出画布
+          if (this.player.x < 0) this.player.x = 0;
+          if (this.player.x + this.player.width > this.canvas.width) {
+            this.player.x = this.canvas.width - this.player.width;
+          }
+          
+          // 按ESC键退出全�?
+          if (e.key === 'Escape' && document.fullscreenElement) {
+            document.exitFullscreen().catch(err => {
+              console.error('无法退出全屏模�?', err);
+            });
+          }
+          
+          // 如果有位置更新，立即重绘游戏画面
+          if (needsRedraw && this.canvas && this.ctx) {
+            // 强制重绘一�?
+            cancelAnimationFrame(this._gameLoopId);
+            this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+          }
+        };
+      },
+      
+      // 绘制玩家
+      drawPlayer() {
+        try {
+          if (!this.ctx || !this.player) {
+            console.error('drawPlayer: 缺少必要对象', {
+              ctx: !!this.ctx,
+              player: !!this.player
+            });
+            return;
+          }
+          
+          // 玩家角色
+          this.ctx.fillStyle = 'red';  // 更鲜艳的颜色，便于识�?
+          this.ctx.fillRect(
+            this.player.x,
+            this.player.y,
+            this.player.width,
+            this.player.height
+          );
+          
+          // 添加玩家轮廓，更容易看见
+          this.ctx.strokeStyle = 'white';
+          this.ctx.lineWidth = 2;
+          this.ctx.strokeRect(
+            this.player.x,
+            this.player.y,
+            this.player.width,
+            this.player.height
+          );
+          
+          // 添加眼睛，让玩家看起来更生动
+          this.ctx.fillStyle = 'white';
+          this.ctx.fillRect(
+            this.player.x + 8, 
+            this.player.y + 10,
+            6,
+            6
+          );
+          this.ctx.fillRect(
+            this.player.x + this.player.width - 14, 
+            this.player.y + 10,
+            6,
+            6
+          );
+        } catch (error) {
+          console.error('绘制玩家时出�?', error);
+        }
+      },
+      
+      // 修改收集物绘制方法，确保可见
+      drawCollectibles() {
+        try {
+          // 确保collectibles数组存在
+          if (!this.collectibles || !this.ctx) {
+            console.error('drawCollectibles: 缺少必要对象', {
+              collectibles: !!this.collectibles,
+              ctx: !!this.ctx
+            });
+            return;
+          }
+          
+          // 绘制可收集的音乐风格图标
+          this.collectibles.forEach(collectible => {
+            // 只绘制未收集和未避开的收集物
+            if (!collectible.collected && !collectible.avoided) {
+              // 绘制图标背景
+              this.ctx.fillStyle = collectible.genre.color;
+              this.ctx.beginPath();
+              this.ctx.arc(
+                collectible.x + collectible.width/2,
+                collectible.y + collectible.height/2,
+                collectible.width/2,
+                0,
+                Math.PI * 2
+              );
+              this.ctx.fill();
+              
+              // 添加边框，使其更容易看见
+              this.ctx.strokeStyle = 'white';
+              this.ctx.lineWidth = 2;
+              this.ctx.stroke();
+              
+              // 绘制图标
+              this.ctx.fillStyle = '#FFF';
+              this.ctx.font = '20px Arial';
+              this.ctx.textAlign = 'center';
+              this.ctx.textBaseline = 'middle';
+              this.ctx.fillText(
+                collectible.genre.icon,
+                collectible.x + collectible.width/2,
+                collectible.y + collectible.height/2
+              );
+              
+              // 绘制音乐风格名称
+              this.ctx.fillStyle = '#FFF';
+              this.ctx.font = 'bold 14px Arial';
+              this.ctx.textAlign = 'center';
+              
+              // 添加名称背景以提高可读�?
+              const textWidth = this.ctx.measureText(collectible.genre.name).width;
+              this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+              this.ctx.fillRect(
+                collectible.x + collectible.width/2 - textWidth/2 - 5,
+                collectible.y + collectible.height + 10,
+                textWidth + 10,
+                20
+              );
+              
+              // 重新绘制文字使其在背景上�?
+              this.ctx.fillStyle = '#FFF';
+              this.ctx.fillText(
+                collectible.genre.name,
+                collectible.x + collectible.width/2,
+                collectible.y + collectible.height + 20
+              );
+            }
+          });
+          
+          // 添加日志，显示收集物数量
+          if (this.collectibles.length > 0) {
+            const activeCount = this.collectibles.filter(c => !c.collected && !c.avoided).length;
+            if (activeCount === 0) {
+              // 如果没有活动的收集物，生成更�?
+              console.log('没有活动的收集物，生成更�?);
+              this.generateMoreCollectibles(5);
+            }
+          }
+        } catch (error) {
+          console.error('绘制收集物时出错:', error);
+        }
+      },
+      
+      drawScore() {
+        // 绘制得分
+        this.ctx.fillStyle = '#FFF';
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(`得分: ${this.score}`, 10, 20);
+        this.ctx.fillText(`已收�? ${this.preferences.length}/${this.genres.length}`, 10, 40);
+      },
+      
+      showFinishScreen() {
+        this.gameRunning = false;
+        
+        // 清空画布
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // 绘制背景
+        this.ctx.fillStyle = '#191919';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // 创建更多庆祝粒子效果
+        const celebrationParticles = [];
+        for (let i = 0; i < 100; i++) {
+          celebrationParticles.push({
+            x: Math.random() * this.canvas.width,
+            y: Math.random() * this.canvas.height,
+            radius: Math.random() * 4 + 1,
+            color: `rgba(155, 75, 255, ${Math.random() * 0.7 + 0.3})`,
+            speedX: (Math.random() - 0.5) * 3,
+            speedY: (Math.random() - 0.5) * 3
+          });
+        }
+        
+        // 绘制紫色标题
+        this.ctx.fillStyle = '#9B4BFF';
+        this.ctx.font = '32px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(
+          '恭喜完成收集!',
+          this.canvas.width / 2,
+          this.canvas.height / 2 - 50
+        );
+        
+        // 绘制完成信息
+        this.ctx.fillStyle = '#FFF';
+        this.ctx.font = '24px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(
+          '收集完成! 点击下方"完成"按钮保存您的音乐偏好!',
+          this.canvas.width / 2,
+          this.canvas.height / 2
+        );
+        
+        // 显示完成按钮
+        const finishButton = document.getElementById('game-finish');
+        if (finishButton) {
+          finishButton.classList.remove('is-hidden');
+        }
+        
+        // 重置开始按�?
+        const startButton = document.getElementById('game-start');
+        if (startButton) {
+          startButton.disabled = false;
+        }
+        
+        // 持续更新庆祝粒子效果
+        const updateCelebration = () => {
+          if (!this.gameRunning) {
+            // 清空画布
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.fillStyle = '#191919';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // 更新并绘制粒�?
+            celebrationParticles.forEach(particle => {
+              particle.x += particle.speedX;
+              particle.y += particle.speedY;
+              
+              // 如果粒子超出边界，将其移动到另一�?
+              if (particle.x < 0) particle.x = this.canvas.width;
+              if (particle.x > this.canvas.width) particle.x = 0;
+              if (particle.y < 0) particle.y = this.canvas.height;
+              if (particle.y > this.canvas.height) particle.y = 0;
+              
+              // 绘制粒子
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+              this.ctx.fillStyle = particle.color;
+              this.ctx.fill();
+            });
+            
+            // 重新绘制文字
+            this.ctx.fillStyle = '#9B4BFF';
+            this.ctx.font = '32px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+              '恭喜完成收集!',
+              this.canvas.width / 2,
+              this.canvas.height / 2 - 50
+            );
+            
+            this.ctx.fillStyle = '#FFF';
+            this.ctx.font = '24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+              '收集完成! 点击下方"完成"按钮保存您的音乐偏好!',
+              this.canvas.width / 2,
+              this.canvas.height / 2
+            );
+            
+            requestAnimationFrame(updateCelebration);
+          }
+        };
+        
+        // 启动庆祝动画
+        updateCelebration();
+        
+        console.log('游戏完成，显示结束界�?);
+      },
+      
+      finishGame() {
+        console.log('完成游戏，保存偏�?);
+        // 获取用户在游戏中收集的音乐偏�?
+        const preferences = this.preferences.map(p => p.id);
+        
+        // 调用Vue应用中的方法保存偏好
+        if (window.app) {
+          console.log('正在保存游戏收集的音乐偏�?', preferences);
+          window.app.saveGamePreferences(preferences);
+        } else {
+          console.error('无法访问Vue应用实例，无法保存音乐偏�?);
+        }
+        
+        // 隐藏完成按钮
+        const finishButton = document.getElementById('game-finish');
+        if (finishButton) {
+          finishButton.classList.add('is-hidden');
+        }
+      },
+      
+      // 添加测试功能和诊断信�?
+      diagnoseGameState() {
+        console.log('==================');
+        console.log('游戏诊断信息:');
+        console.log('Canvas:', !!this.canvas);
+        console.log('上下�?', !!this.ctx);
+        console.log('玩家:', !!this.player);
+        if (this.player) {
+          console.log('玩家位置:', this.player.x, this.player.y);
+        }
+        console.log('游戏运行状�?', this.gameRunning);
+        console.log('游戏暂停状�?', this.gamePaused);
+        console.log('收集物数�?', this.collectibles ? this.collectibles.length : 0);
+        console.log('活动收集�?', this.collectibles ? this.collectibles.filter(c => !c.collected && !c.avoided).length : 0);
+        console.log('键盘事件绑定:', !!this._keydownHandler);
+        console.log('游戏循环ID:', !!this._gameLoopId);
+        console.log('==================');
+        
+        // 尝试修复常见问题
+        if (!this.gameRunning && this.player) {
+          console.log('游戏未运行，尝试重新启动');
+          this.gameRunning = true;
+          this.gamePaused = false;
+          this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+        }
+        
+        if (this.gameRunning && (!this.collectibles || this.collectibles.length === 0)) {
+          console.log('没有收集物，尝试生成');
+          this.generateCollectibles();
+        }
+        
+        if (!this._keydownHandler) {
+          console.log('键盘事件未绑定，尝试重新绑定');
+          this.setupEventListeners();
+        }
+        
+        // 强制重绘一�?
+        if (this.canvas && this.ctx) {
+          this.gameLoop();
+          console.log('强制重绘完成');
+        }
+      }
+    }
+  });
+  
+  // 将事件总线暴露给全局，以便组件间通信
+  window.EventBus = EventBus;
+  
+  // 添加Vue全局错误处理
+  Vue.config.errorHandler = function(err, vm, info) {
+    console.error('Vue错误:', err);
+    console.error('组件:', vm);
+    console.error('信息:', info);
+  };
+}); 
+
+// 音乐偏好游戏对象
+const musicGame = {
+  // 游戏全局属性，确保这些变量不会被重�?
+  canvas: null,
+  ctx: null,
+  player: null,
+  preferences: [],
+  genres: [
+    { id: 'pop', name: '流行', icon: '🎵', color: '#ff5252' },
+    { id: 'rock', name: '摇滚', icon: '🎸', color: '#ff9800' },
+    { id: 'classical', name: '古典', icon: '🎻', color: '#9c27b0' },
+    { id: 'electronic', name: '电子', icon: '🎧', color: '#2196f3' },
+    { id: 'jazz', name: '爵士', icon: '🎷', color: '#4caf50' },
+    { id: 'hiphop', name: '嘻哈', icon: '🎤', color: '#795548' },
+    { id: 'folk', name: '民谣', icon: '🪕', color: '#607d8b' },
+    { id: 'rb', name: 'R&B', icon: '🎹', color: '#e91e63' }
+  ],
+  collectibles: [],
+  gameRunning: false,
+  score: 0,
+  gravity: 0.5,
+  ground: 0,
+  particles: [],
+  _initialized: false,
+  _eventListenersSet: false,
+  _gameLoopId: null,
+  
+  init() {
+    try {
+      console.log('正在初始化音乐游�?..');
+      
+      // 获取canvas元素
+      this.canvas = document.getElementById('game-canvas');
+      if (!this.canvas) {
+        console.error('找不到游戏画布元�?');
+        
+        // 尝试创建canvas
+        const container = document.querySelector('.game-container');
+        if (container) {
+          console.log('尝试创建canvas元素...');
+          this.canvas = document.createElement('canvas');
+          this.canvas.id = 'game-canvas';
+          this.canvas.width = container.clientWidth;
+          this.canvas.height = 400;
+          container.appendChild(this.canvas);
+          console.log('已创建canvas元素:', this.canvas);
+        } else {
+          console.error('找不到game-container，无法创建canvas');
+          return false;
+        }
+      }
+      
+      // 获取2D上下�?
+      this.ctx = this.canvas.getContext('2d');
+      if (!this.ctx) {
+        console.error('无法获取canvas 2D上下�?);
+        return false;
+      }
+      
+      console.log('Canvas准备就绪:', this.canvas.width, 'x', this.canvas.height);
+      
+      // 初始化游戏变�?
+      this.gravity = 0.5;
+      this.score = 0;
+      this.preferences = [];
+      this.collectibles = [];
+      this.particles = [];
+      this.gameRunning = false;
+      this.gamePaused = false;
+      this.gameCompleted = false;
+      
+      // 定义音乐风格
+      this.genres = [
+        { name: '流行音乐', icon: '🎵', color: '#FF5733' },
+        { name: '摇滚', icon: '🤘', color: '#C70039' },
+        { name: '古典', icon: '🎻', color: '#900C3F' },
+        { name: '爵士', icon: '🎷', color: '#581845' },
+        { name: '电子', icon: '🎧', color: '#FFC300' },
+        { name: '嘻哈', icon: '🎤', color: '#DAF7A6' },
+        { name: '民谣', icon: '🪕', color: '#FF5733' },
+        { name: '蓝调', icon: '🎸', color: '#C70039' }
+      ];
+      
+      // 创建玩家对象
+      this.player = {
+        x: 100,
+        y: 300,
+        width: 40,
+        height: 40,
+        speed: 5,
+        dy: 0,
+        jumping: false,
+        grounded: true
+      };
+      
+      // 计算地面高度
+      this.ground = this.canvas.height - this.player.height;
+      
+      // 设置事件监听�?
+      this.setupEventListeners();
+      
+      // 绘制初始屏幕
+      this.drawInitialScreen();
+      
+      console.log('游戏初始化完成，地面位置:', this.ground);
+      return true;
+      
+    } catch (error) {
+      console.error('初始化游戏时出错:', error);
+      return false;
+    }
+  },
+  
+  // 开始游�?
+  startGame() {
+    try {
+      console.log('===== 开始游�?=====');
+      
+      // 1. 确认canvas和ctx已初始化
+      if (!this.canvas || !this.ctx) {
+        console.log('Canvas未初始化，尝试初始化...');
+        if (!this.init()) {
+          alert('无法初始化游戏，请刷新页面重�?);
+          return;
+        }
+      }
+      
+      console.log('Canvas状�?', this.canvas.width, 'x', this.canvas.height);
+      
+      // 2. 重置游戏状�?
+      this.gameRunning = true;
+      this.gamePaused = false;
+      this.gameCompleted = false;
+      this.score = 0;
+      
+      // 3. 重置玩家位置
+      this.player = {
+        x: 100,
+        y: 300,
+        width: 40,
+        height: 40,
+        speed: 5,
+        dy: 0,
+        jumping: false,
+        grounded: true
+      };
+      
+      this.ground = this.canvas.height - this.player.height;
+      console.log('玩家已重�?', this.player);
+      
+      // 4. 清空并重新生成收集物
+      this.collectibles = [];
+      this.generateCollectibles();
+      console.log('收集物已生成:', this.collectibles.length);
+      
+      // 5. 清空粒子效果
+      this.particles = [];
+      
+      // 6. 尝试进入全屏
+      this.toggleFullscreen();
+      
+      // 7. 立即绘制一帧游戏画面，避免黑屏
+      this.gameLoop();
+      console.log('第一帧游戏已绘制');
+      
+      // 8. 隐藏/显示相关按钮
+      const startButton = document.getElementById('game-start');
+      if (startButton) {
+        startButton.disabled = true;
+      }
+      
+      const finishButton = document.getElementById('game-finish');
+      if (finishButton) {
+        finishButton.classList.add('is-hidden');
+      }
+      
+      // 9. 调试输出
+      console.log('游戏成功启动! 请使用方向键控制:');
+      console.log('- 左右箭头: 移动角色');
+      console.log('- 上箭�? 跳跃');
+      console.log('- 空格�? 暂停/继续');
+      console.log('===================');
+      
+    } catch (error) {
+      console.error('启动游戏时出�?', error);
+      alert('启动游戏时出错，请尝试刷新页�?);
+    }
+  },
+  
+  // 游戏循环
+  gameLoop() {
+    try {
+      // 确保必要的对象存�?
+      if (!this.canvas || !this.ctx || !this.player) {
+        console.error('gameLoop: 缺少必要对象', {
+          canvas: !!this.canvas,
+          ctx: !!this.ctx,
+          player: !!this.player
+        });
+        return;
+      }
+      
+      // 清除画布
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      
+      // 绘制背景
+      this.ctx.fillStyle = '#191919';
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      
+      // 绘制地面
+      this.ctx.fillStyle = '#333';
+      this.ctx.fillRect(0, this.ground + this.player.height, this.canvas.width, 5);
+      
+      // 如果游戏已暂停，显示暂停屏幕
+      if (this.gamePaused) {
+        this.drawPauseScreen();
+        return;
+      }
+      
+      // 如果游戏已完成，显示完成屏幕
+      if (this.gameCompleted) {
+        this.showFinishScreen();
+        return;
+      }
+      
+      // 更新玩家
+      this.updatePlayer();
+      
+      // 更新收集物位�?
+      this.updateCollectibles();
+      
+      // 检查碰�?
+      this.checkCollisions();
+      
+      // 更新粒子效果
+      if (typeof this.updateParticles === 'function') {
+        this.updateParticles();
+      }
+      
+      // 绘制玩家
+      this.drawPlayer();
+      
+      // 绘制收集�?
+      this.drawCollectibles();
+      
+      // 绘制粒子效果
+      if (typeof this.drawParticles === 'function') {
+        this.drawParticles();
+      }
+      
+      // 绘制分数
+      this.drawScore();
+      
+      // 绘制偏好显示
+      if (typeof this.drawPreferences === 'function') {
+        this.drawPreferences();
+      }
+      
+      // 继续游戏循环
+      if (this.gameRunning) {
+        this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+      }
+    } catch (error) {
+      console.error('游戏循环中出�?', error);
+      
+      // 尝试恢复游戏运行
+      if (this.gameRunning) {
+        this._gameLoopId = requestAnimationFrame(() => this.gameLoop());
+      }
+    }
+  },
+  
+  // 创建粒子效果
+  createParticles() {
+    // 清空现有粒子
+    this.particles = [];
+    
+    // 创建新粒�?
+    for (let i = 0; i < 50; i++) {
+      this.particles.push({
+        x: Math.random() * this.canvas.width,
+        y: Math.random() * this.canvas.height,
+        radius: Math.random() * 3 + 1,
+        color: `rgba(155, 75, 255, ${Math.random() * 0.5 + 0.1})`,
+        speedX: Math.random() * 0.5 - 0.25,
+        speedY: Math.random() * 0.5 - 0.25
+      });
+    }
+  },
+  
+  // 更新粒子
+  updateParticles() {
+    if (!this.particles || !Array.isArray(this.particles)) return;
+    
+    for (let i = 0; i < this.particles.length; i++) {
+      let p = this.particles[i];
+      
+      // 更新粒子位置
+      p.x += p.speedX;
+      p.y += p.speedY;
+      
+      // 边界检�?
+      if (p.x < 0 || p.x > this.canvas.width) {
+        p.speedX *= -1;
+      }
+      
+      if (p.y < 0 || p.y > this.canvas.height) {
+        p.speedY *= -1;
+      }
+    }
+  },
+  
+  // 当Vue应用加载完成�?或一段时间后)初始化游�?
+  setTimeout(() => {
+    initGameWhenCanvasReady();
+  }, 1000);
+}; 
+
+// 在document.addEventListener('DOMContentLoaded')后添加渲染修复函�?
+
+// 添加修复Vue.js模板渲染问题的函�?
+function fixTemplateRendering() {
+  console.log('正在修复模板渲染问题...');
+  
+  // 检查Vue实例是否已正确初始化
+  if (!window.app) {
+    console.error('Vue实例未找到，尝试重新初始�?);
+    
+    // 确保translations对象存在，用于模板渲�?
+    const translations = {
+      zh: {
+        'username': '用户�?,
+        'email': '邮箱',
+        'password': '密码',
+        'login': '登录',
+        'register': '注册',
+        'logout': '退�?,
+        'developer': '开发�?,
+        'registerPrompt': '还没有账号？点击注册',
+        'loginPrompt': '已有账号？点击登�?,
+        'welcome': '欢迎',
+        'survey': '问卷',
+        'recommendations': '推荐',
+        'chat': '聊天',
+        'evaluation': '评价',
+        'musicPreference': '音乐偏好',
+        'submit': '提交',
+        'next': '下一�?,
+        'previous': '上一�?,
+        'searchPlaceholder': '搜索音乐...',
+        'songName': '歌曲�?,
+        'artist': '艺术�?,
+        'rating': '评分'
+      },
+      en: {
+        'username': 'Username',
+        'email': 'Email',
+        'password': 'Password',
+        'login': 'Login',
+        'register': 'Register',
+        'logout': 'Logout',
+        'developer': 'Developer',
+        'registerPrompt': 'No account? Register here',
+        'loginPrompt': 'Already have an account? Login here',
+        'welcome': 'Welcome',
+        'survey': 'Survey',
+        'recommendations': 'Recommendations',
+        'chat': 'Chat',
+        'evaluation': 'Evaluation',
+        'musicPreference': 'Music Preference',
+        'submit': 'Submit',
+        'next': 'Next',
+        'previous': 'Previous',
+        'searchPlaceholder': 'Search music...',
+        'songName': 'Song Name',
+        'artist': 'Artist',
+        'rating': 'Rating'
+      }
+    };
+    
+    // 重新初始化Vue应用
+    try {
+      window.app = new Vue({
+        el: '#app',
+        data: {
+          currentTab: 'welcome',
+          username: '',
+          email: '',
+          password: '',
+          currentLanguage: 'zh',
+          isLoggedIn: false,
+          currentUser: null,
+          loginError: '',
+          registerError: '',
+          translations: translations,
+          notifications: []
+        },
+        methods: {
+          t(key) {
+            if (!key) return '';
+            try {
+              const translation = this.translations[this.currentLanguage][key];
+              return translation || key;
+            } catch (e) {
+              console.error('翻译错误:', e);
+              return key;
+            }
+          },
+          switchLanguage(lang) {
+            console.log('切换语言�?', lang);
+            this.currentLanguage = lang;
+            localStorage.setItem('language', lang);
+          },
+          login() {
+            console.log('尝试登录...');
+            // 登录逻辑
+          },
+          logout() {
+            console.log('登出...');
+            this.isLoggedIn = false;
+            this.currentUser = null;
+          },
+          register() {
+            console.log('尝试注册...');
+            // 注册逻辑
+          }
+        },
+        mounted() {
+          // 强制立即更新所有绑定，确保模板渲染
+          this.$nextTick(() => {
+            this.$forceUpdate();
+            console.log('强制更新Vue实例完成');
+          });
+        }
+      });
+      
+      console.log('Vue实例已重新初始化');
+    } catch (e) {
+      console.error('重新初始化Vue实例失败:', e);
+    }
+  } else {
+    // 强制Vue实例更新
+    try {
+      window.app.$forceUpdate();
+      console.log('强制刷新Vue实例');
+    } catch (e) {
+      console.error('强制刷新Vue实例失败:', e);
+    }
+  }
+  
+  // 手动替换所有未渲染的模板语�?
+  setTimeout(() => {
+    console.log('检查未渲染的模板标�?..');
+    
+    // 获取所有可能包含未渲染模板的元�?
+    const elements = document.querySelectorAll('*:not(script):not(style)');
+    
+    // 计数修复的模板表达式
+    let fixCount = 0;
+    
+    elements.forEach(el => {
+      // 检查元素的textContent和innerHTML
+      if (el.innerHTML && el.innerHTML.includes('{{') && el.innerHTML.includes('}}')) {
+        const originalHTML = el.innerHTML;
+        
+        // 替换 {{ t('key') }} 格式的模�?
+        let newHTML = originalHTML.replace(/\{\{\s*t\('([^']+)'\)\s*\}\}/g, (match, key) => {
+          fixCount++;
+          
+          // 获取翻译文本
+          let replacement = key;
+          if (window.app && window.app.translations && 
+              window.app.translations[window.app.currentLanguage] && 
+              window.app.translations[window.app.currentLanguage][key]) {
+            replacement = window.app.translations[window.app.currentLanguage][key];
+          }
+          
+          return replacement;
+        });
+        
+        // 如果发生了替换，更新HTML
+        if (newHTML !== originalHTML) {
+          el.innerHTML = newHTML;
+        }
+      }
+      
+      // 检查元素的子文本节�?
+      if (el.childNodes && el.childNodes.length > 0) {
+        el.childNodes.forEach(node => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent;
+            
+            // 检查是否包含模板语�?{{ ... }}
+            if (text.includes('{{') && text.includes('}}')) {
+              
+              // 替换所有模板表达式
+              let newText = text.replace(/\{\{\s*t\('([^']+)'\)\s*\}\}/g, (match, key) => {
+                fixCount++;
+                
+                // 获取翻译文本
+                let replacement = key;
+                if (window.app && window.app.translations && 
+                    window.app.translations[window.app.currentLanguage] && 
+                    window.app.translations[window.app.currentLanguage][key]) {
+                  replacement = window.app.translations[window.app.currentLanguage][key];
+                }
+                
+                return replacement;
+              });
+              
+              // 如果发生了替换，更新文本
+              if (newText !== text) {
+                node.textContent = newText;
+              }
+            }
+          }
+        });
+      }
+    });
+    
+    console.log(`修复�?${fixCount} 个模板表达式`);
+    
+    // 检查是否仍有未渲染的模�?
+    const stillHasUnrenderedTemplates = document.body.innerHTML.includes('{{') && 
+                                      document.body.innerHTML.includes('}}');
+    
+    if (stillHasUnrenderedTemplates) {
+      console.log('仍有未渲染的模板，尝试重新修�?);
+      setTimeout(fixTemplateRendering, 500);
+    }
+  }, 100);
+}
+
+// 确保页面完全加载后调用修复函�?
+window.addEventListener('load', function() {
+  console.log('页面完全加载，检查模板渲染状�?);
+  
+  // 检查是否有未渲染的模板标记
+  setTimeout(() => {
+    const hasUnrenderedTemplates = document.body.innerHTML.includes('{{') && 
+                                  document.body.innerHTML.includes('}}');
+    
+    if (hasUnrenderedTemplates) {
+      console.log('检测到未渲染的模板，尝试修�?);
+      fixTemplateRendering();
+    } else {
+      console.log('模板渲染正常');
+    }
+  }, 500); // 延迟检查以确保Vue有时间渲�?
+});
+
+// 监听DOM变化，检查是否有新添加的未渲染模�?
+document.addEventListener('DOMContentLoaded', function() {
+  // 创建MutationObserver观察DOM变化
+  const observer = new MutationObserver((mutations) => {
+    let needsFix = false;
+    
+    // 检查变化的节点
+    mutations.forEach(mutation => {
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        // 检查是否添加了游戏画布元素
+        if (checkAndInitCanvas()) {
+          console.log('通过MutationObserver检测到canvas并初始化游戏');
+          tabObserver.disconnect();
+          return;
+        }
+      }
+    });
+  });
+  
+  // 监听整个文档的变�?
+  tabObserver.observe(document.body, { 
+    childList: true, 
+    subtree: true 
+  });
+  
+  // 备用方法：使用间隔轮询检查canvas是否已加�?
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  const canvasCheckInterval = setInterval(() => {
+    attempts++;
+    console.log(`检查游戏画�?- 尝试 ${attempts}/${maxAttempts}`);
+    
+    if (checkAndInitCanvas()) {
+      console.log('通过轮询检测到canvas并初始化游戏');
+      clearInterval(canvasCheckInterval);
+      return;
+    }
+    
+    if (attempts >= maxAttempts) {
+      console.error('多次尝试后仍找不到游戏画布元�?');
+      clearInterval(canvasCheckInterval);
+      
+      // 尝试强制添加canvas元素
+      const gameScreen = document.querySelector('.game-screen');
+      if (gameScreen) {
+        console.log('尝试强制创建canvas元素...');
+        const canvas = document.createElement('canvas');
+        canvas.id = 'game-canvas';
+        canvas.width = 800;
+        canvas.height = 400;
+        gameScreen.innerHTML = '';
+        gameScreen.appendChild(canvas);
+        
+        setTimeout(() => {
+          checkAndInitCanvas();
+        }, 100);
+      }
+    }
+  }, 1000);
+}); 
+
+/**
+ * 修复模板渲染问题
+ * 检查页面上未渲染的模板表达式并替换为正确的文本
+ */
+const fixTemplateRendering = function() {
+  console.log('正在检查和修复未渲染的模板...');
+  
+  // 检查Vue实例是否存在
+  if (!window.app) {
+    console.error('Vue实例不存在，无法修复模板');
+    return;
+  }
+  
+  // 定义翻译对象
+  if (!window.app.translations) {
+    window.app.translations = {
+      zh: {
+        'username': '用户�?,
+        'email': '邮箱',
+        'password': '密码',
+        'login': '登录',
+        'register': '注册',
+        'logout': '退�?,
+        'developer': '开发�?,
+        'registerPrompt': '还没有账号？点击注册',
+        'loginPrompt': '已有账号？点击登�?,
+        'welcome': '欢迎',
+        'survey': '问卷',
+        'recommendations': '推荐',
+        'chat': '聊天',
+        'evaluation': '评价',
+        'musicPreference': '音乐偏好',
+        'submit': '提交',
+        'next': '下一�?,
+        'previous': '上一�?,
+        'searchPlaceholder': '搜索音乐...',
+        'songName': '歌曲�?,
+        'artist': '艺术�?,
+        'rating': '评分'
+      },
+      en: {
+        'username': 'Username',
+        'email': 'Email',
+        'password': 'Password',
+        'login': 'Login',
+        'register': 'Register',
+        'logout': 'Logout',
+        'developer': 'Developer',
+        'registerPrompt': 'No account? Click to register',
+        'loginPrompt': 'Already have an account? Click to login',
+        'welcome': 'Welcome',
+        'survey': 'Survey',
+        'recommendations': 'Recommendations',
+        'chat': 'Chat',
+        'evaluation': 'Evaluation',
+        'musicPreference': 'Music Preference',
+        'submit': 'Submit',
+        'next': 'Next',
+        'previous': 'Previous',
+        'searchPlaceholder': 'Search music...',
+        'songName': 'Song Name',
+        'artist': 'Artist',
+        'rating': 'Rating'
+      }
+    };
+  }
+  
+  // 设置当前语言
+  if (!window.app.currentLanguage) {
+    window.app.currentLanguage = 'zh';
+  }
+  
+  let fixCount = 0;
+  
+  // 查找所有文本节�?
+  const textNodes = [];
+  function findTextNodes(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      textNodes.push(node);
+    } else {
+      for (let i = 0; i < node.childNodes.length; i++) {
+        findTextNodes(node.childNodes[i]);
+      }
+    }
+  }
+  
+  // 从文档体开始查�?
+  findTextNodes(document.body);
+  
+  // 检查每个文本节�?
+  textNodes.forEach(node => {
+    const text = node.textContent;
+    
+    // 检查文本是否包含模板语�?
+    if (text.includes('{{') && text.includes('}}')) {
+      // 替换所有模板表达式
+      const newText = text.replace(/\{\{\s*t\('([^']+)'\)\s*\}\}/g, function(match, key) {
+        fixCount++;
+        
+        // 获取翻译文本
+        let replacement = key;
+        if (window.app.translations && 
+            window.app.translations[window.app.currentLanguage] && 
+            window.app.translations[window.app.currentLanguage][key]) {
+          replacement = window.app.translations[window.app.currentLanguage][key];
+        }
+        
+        return replacement;
+      });
+      
+      // 更新节点内容
+      if (text !== newText) {
+        node.textContent = newText;
+      }
+    }
+  });
+  
+  // 检查是否仍有未渲染的模�?
+  const stillHasUnrenderedTemplates = document.body.innerHTML.includes('{{') && 
+                                     document.body.innerHTML.includes('}}');
+  
+  if (stillHasUnrenderedTemplates) {
+    console.log('仍有未渲染的模板，尝试重新初始化Vue');
+    
+    // 查找包含未渲染模板的元素
+    const elementsWithTemplates = [];
+    document.querySelectorAll('*').forEach(el => {
+      if (el.innerHTML.includes('{{') && el.innerHTML.includes('}}')) {
+        elementsWithTemplates.push(el);
+      }
+    });
+    
+    console.log('包含未渲染模板的元素数量:', elementsWithTemplates.length);
+    
+    // 尝试直接替换模板内容
+    elementsWithTemplates.forEach(el => {
+      const html = el.innerHTML;
+      const newHtml = html.replace(/\{\{\s*t\('([^']+)'\)\s*\}\}/g, function(match, key) {
+        fixCount++;
+        
+        // 获取翻译文本
+        let replacement = key;
+        if (window.app.translations && 
+            window.app.translations[window.app.currentLanguage] && 
+            window.app.translations[window.app.currentLanguage][key]) {
+          replacement = window.app.translations[window.app.currentLanguage][key];
+        }
+        
+        return replacement;
+      });
+      
+      if (html !== newHtml) {
+        el.innerHTML = newHtml;
+      }
+    });
+  }
+  
+  console.log(`模板修复完成，替换了 ${fixCount} 个模板表达式`);
+  return fixCount;
+};
+
+// 监听DOM变化，检查是否有新添加的未渲染模�?
+document.addEventListener('DOMContentLoaded', function() {
+  // 首次运行修复
+  setTimeout(fixTemplateRendering, 500);
+  
+  // 创建MutationObserver观察DOM变化
+  const observer = new MutationObserver(function(mutations) {
+    let needsFix = false;
+    
+    // 检查变化的节点
+    mutations.forEach(function(mutation) {
+      if (mutation.addedNodes && mutation.addedNodes.length) {
+        mutation.addedNodes.forEach(function(node) {
+          // 检查新添加的节点是否包含未渲染的模�?
+          if (node.nodeType === Node.ELEMENT_NODE && 
+              node.innerHTML && 
+              node.innerHTML.includes('{{') && 
+              node.innerHTML.includes('}}')) {
+            needsFix = true;
+          }
+        });
+      }
+    });
+    
+    // 如果检测到未渲染的模板，尝试修�?
+    if (needsFix) {
+      console.log('检测到DOM变化中的未渲染模板，尝试修复');
+      fixTemplateRendering();
+    }
+  });
+  
+  // 开始观察整个文�?
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+}); 
+
+// 定义修复模板渲染的函�?
+function fixTemplateRendering() {
+  console.log('正在检查和修复未渲染的模板...');
+  
+  // 检查是否有未渲染的模板
+  const hasUnrenderedTemplates = document.body.innerHTML.includes('{{') && 
+                                document.body.innerHTML.includes('}}');
+  
+  if (!hasUnrenderedTemplates) {
+    console.log('没有发现未渲染的模板');
+    return 0;
+  }
+  
+  console.log('发现未渲染的模板，开始修�?);
+  
+  // 定义翻译对象
+  const translations = {
+    zh: {
+      'username': '用户�?,
+      'email': '邮箱',
+      'password': '密码',
+      'login': '登录',
+      'register': '注册',
+      'logout': '退�?,
+      'developer': '开发�?,
+      'registerPrompt': '还没有账号？点击注册',
+      'loginPrompt': '已有账号？点击登�?,
+      'welcome': '欢迎',
+      'survey': '问卷',
+      'recommendations': '推荐',
+      'chat': '聊天',
+      'evaluation': '评价',
+      'musicPreference': '音乐偏好',
+      'submit': '提交',
+      'next': '下一�?,
+      'previous': '上一�?,
+      'searchPlaceholder': '搜索音乐...',
+      'songName': '歌曲�?,
+      'artist': '艺术�?,
+      'rating': '评分'
+    },
+    en: {
+      'username': 'Username',
+      'email': 'Email',
+      'password': 'Password',
+      'login': 'Login',
+      'register': 'Register',
+      'logout': 'Logout',
+      'developer': 'Developer',
+      'registerPrompt': 'No account? Click to register',
+      'loginPrompt': 'Already have an account? Click to login',
+      'welcome': 'Welcome',
+      'survey': 'Survey',
+      'recommendations': 'Recommendations',
+      'chat': 'Chat',
+      'evaluation': 'Evaluation',
+      'musicPreference': 'Music Preference',
+      'submit': 'Submit',
+      'next': 'Next',
+      'previous': 'Previous',
+      'searchPlaceholder': 'Search music...',
+      'songName': 'Song Name',
+      'artist': 'Artist',
+      'rating': 'Rating'
+    }
+  };
+  
+  let fixCount = 0;
+  
+  // 查找包含未渲染模板的元素
+  const elementsWithTemplates = [];
+  document.querySelectorAll('*').forEach(el => {
+    if (el.innerHTML && el.innerHTML.includes('{{') && el.innerHTML.includes('}}')) {
+      elementsWithTemplates.push(el);
+    }
+  });
+  
+  console.log('包含未渲染模板的元素数量:', elementsWithTemplates.length);
+  
+  // 设置当前语言
+  const currentLanguage = 'zh'; // 默认中文
+  
+  // 替换模板
+  elementsWithTemplates.forEach(el => {
+    const original = el.innerHTML;
+    const newHtml = original.replace(/\{\{\s*t\('([^']+)'\)\s*\}\}/g, function(match, key) {
+      fixCount++;
+      
+      // 获取翻译文本
+      let replacement = key;
+      if (translations[currentLanguage] && translations[currentLanguage][key]) {
+        replacement = translations[currentLanguage][key];
+      }
+      
+      return replacement;
+    });
+    
+    if (original !== newHtml) {
+      el.innerHTML = newHtml;
+    }
+  });
+  
+  console.log(`模板修复完成，替换了 ${fixCount} 个模板表达式`);
+  return fixCount;
+}
+
+// 页面加载完成后执行修�?
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('页面加载完成，即将开始检查模板渲�?);
+  
+  // 延迟执行修复，确保Vue有机会先渲染
+  setTimeout(function() {
+    const fixedCount = fixTemplateRendering();
+    if (fixedCount > 0) {
+      console.log(`成功修复�?${fixedCount} 个模板表达式`);
+    }
+  }, 1000);
+}); 
+
+
+// ��VueӦ�ü�����ɺ�(��һ��ʱ���)��ʼ����Ϸ
+setTimeout(() => {
+  initGameWhenCanvasReady();
+}, 1000);
+

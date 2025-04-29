@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="music-pattern" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
+      <!-- 音符 1 -->
+      <path d="M10,30 Q10,20 15,15 T25,10 L25,25 Q25,30 20,35 T10,30 Z" fill="#3273dc" opacity="0.2"/>
+      <!-- 音符 2 -->
+      <path d="M35,20 Q35,15 40,10 T45,5 L45,15 Q45,20 40,25 T35,20 Z" fill="#3273dc" opacity="0.2"/>
+      <!-- 音乐线条 -->
+      <line x1="10" y1="40" x2="40" y2="40" stroke="#3273dc" stroke-width="1" opacity="0.2"/>
+      <line x1="15" y1="45" x2="45" y2="45" stroke="#3273dc" stroke-width="1" opacity="0.2"/>
+    </pattern>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#music-pattern)"/>
+</svg> 

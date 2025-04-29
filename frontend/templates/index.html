@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深度推荐音乐 | DeepRecommend Music</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/questionnaire.css">
+    <link rel="icon" href="/static/img/favicon.ico" type="image/x-icon">
+    <style>
+        [v-cloak] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <!-- 导航栏 - 仿网易云音乐风格 -->
+        <nav class="navbar is-fixed-top" role="navigation" aria-label="main navigation">
+            <div class="navbar-brand">
+                <a class="navbar-item" href="/">
+                    <i class="fas fa-headphones-alt mr-2"></i>
+                    <span v-text="currentLanguage === 'zh' ? '深度推荐音乐' : 'DeepRecommend Music'"></span>
+                </a>
+                <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarMenu">
+                    <span aria-hidden="true"></span>
+                    <span aria-hidden="true"></span>
+                    <span aria-hidden="true"></span>
+                </a>
+            </div>
+
+            <div id="navbarMenu" class="navbar-menu">
+                <div class="navbar-start">
+                    <a href="#" data-tab="welcome" class="navbar-item">
+                        <i class="fas fa-home"></i> {{ t('home') }}
+                    </a>
+                    <a href="#" data-tab="rate" class="navbar-item">
+                        <i class="fas fa-clipboard-list"></i> {{ t('questionnaire') }}
+                    </a>
+                    <a href="#" data-tab="recommend" class="navbar-item">
+                        <i class="fas fa-headphones"></i> {{ t('recommend') }}
+                    </a>
+                    <a href="#" data-tab="chat" class="navbar-item">
+                        <i class="fas fa-comments"></i> {{ t('chat') }}
+                    </a>
+                    <a href="#" data-tab="game" class="navbar-item">
+                        <i class="fas fa-gamepad"></i> {{ t('game') }}
+                    </a>
+                </div>
+                
+                <div class="navbar-end">
+                    <div class="navbar-item has-dropdown is-hoverable">
+                        <a class="navbar-link">
+                            <i class="fas fa-globe mr-2"></i>
+                            <span v-text="currentLanguage === 'zh' ? '中文' : 'English'"></span>
+                        </a>
+                        <div class="navbar-dropdown">
+                            <a class="navbar-item" @click="switchLanguage('zh')">中文</a>
+                            <a class="navbar-item" @click="switchLanguage('en')">English</a>
+                        </div>
+                    </div>
+                    
+                    <div v-if="isLoggedIn" class="navbar-item has-dropdown is-hoverable">
+                        <a class="navbar-link">
+                            <i class="fas fa-user mr-2"></i>
+                            <span v-text="currentUser ? currentUser.username : t('user')"></span>
+                        </a>
+                        <div class="navbar-dropdown">
+                            <a class="navbar-item" @click="logout">
+                                <i class="fas fa-sign-out-alt mr-2"></i>
+                                <span v-text="t('logout')"></span>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <template v-else>
+                        <div class="navbar-item">
+                            <div class="buttons">
+                                <a class="button is-primary" data-tab="register">
+                                    <i class="fas fa-user-plus mr-2"></i>
+                                    <span v-text="t('register')"></span>
+                                </a>
+                                <a class="button is-light" data-tab="login">
+                                    <i class="fas fa-sign-in-alt mr-2"></i>
+                                    <span v-text="t('login')"></span>
+                                </a>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template v-if="isLoggedIn">
+                        <div class="navbar-item">
+                            <a class="button is-light emotion-button" @click="navigateToEmotionRecommend">
+                                <i class="fas fa-heart"></i>
+                                <span>心情推荐</span>
+                            </a>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 通知 -->
+        <div class="notification-container">
+            <div v-for="notification in notifications" :key="notification.id" 
+                 class="notification" :class="notification.type">
+                <button class="delete" @click="removeNotification(notification.id)"></button>
+                <i class="fas" :class="'fa-' + notification.icon"></i>
+                <span v-text="notification.message"></span>
+            </div>
+        </div>
+
+        <!-- 主内容 -->
+        <div class="main-content" style="margin-top: 52px;">
+            <section class="section">
+                <div class="container">
+                    <!-- 登录页面 -->
+                    <div v-if="currentTab === 'login'" class="columns is-centered">
+                        <div class="column is-one-third">
+                            <div class="login-container">
+                                <h1 class="title has-text-centered">
+                                    <i class="fas fa-sign-in-alt mr-2"></i>
+                                    <span v-text="t('login')"></span>
+                                </h1>
+                                
+                                <div class="field">
+                                    <label class="label" v-text="t('username')"></label>
+                                    <div class="control has-icons-left">
+                                        <input v-model="username" class="input" type="text" :placeholder="t('username')">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-user"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label class="label" v-text="t('email')"></label>
+                                    <div class="control has-icons-left">
+                                        <input v-model="email" class="input" type="email" :placeholder="t('email')">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-envelope"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="field">
+                                    <label class="label" v-text="t('password')"></label>
+                                    <div class="control has-icons-left">
+                                        <input v-model="password" class="input" type="password" :placeholder="t('password')">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-lock"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div v-if="loginError" class="notification is-danger">
+                                    <span v-text="loginError"></span>
+                                </div>
+                                
+                                <div class="field">
+                                    <div class="control">
+                                        <button @click="login" class="button is-primary is-fullwidth">
+                                            <i class="fas fa-sign-in-alt mr-2"></i>
+                                            <span v-text="t('login')"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="has-text-centered mt-4">
+                                    <a @click="currentTab = 'register'" v-text="t('registerPrompt')"></a>
+                                </div>
+                                
+                                <!-- 模拟网易云音乐登录提示 -->
+                                <div class="notification is-light is-info mt-4 is-size-7">
+                                    <p><strong><i class="fas fa-info-circle"></i> 开发者提示:</strong></p>
+                                    <p>使用邮箱 <code>test@example.com</code> 和用户名 <code>test</code> 可以登录测试账号。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 注册页面 -->
+                    <div v-else-if="currentTab === 'register'" class="columns is-centered">
+                        <div class="column is-one-third">
+                            <div class="login-container">
+                                <h1 class="title has-text-centered">
+                                    <i class="fas fa-user-plus mr-2"></i>
+                                    <span v-text="t('register')"></span>
+                                </h1>
+                                
+                                <div class="field">
+                                    <label class="label" v-text="t('username')"></label>
+                                    <div class="control has-icons-left">
+                                        <input v-model="newUsername" class="input" type="text" :placeholder="t('username')">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-user"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="field">
+                                    <label class="label" v-text="t('email')"></label>
+                                    <div class="control has-icons-left">
+                                        <input v-model="newEmail" class="input" type="email" :placeholder="t('email')">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-envelope"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="field">
+                                    <label class="label" v-text="t('password')"></label>
+                                    <div class="control has-icons-left">
+                                        <input v-model="newPassword" class="input" type="password" :placeholder="t('password')">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-lock"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div v-if="registerError" class="notification is-danger">
+                                    <span v-text="registerError"></span>
+                                </div>
+                                
+                                <div class="field">
+                                    <div class="control">
+                                        <button @click="register" class="button is-primary is-fullwidth">
+                                            <i class="fas fa-user-plus mr-2"></i>
+                                            <span v-text="t('register')"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="has-text-centered mt-4">
+                                    <a @click="currentTab = 'login'" v-text="t('loginPrompt')"></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 欢迎页面 - 仿网易云风格 -->
+                    <div v-else-if="currentTab === 'welcome'" class="columns is-multiline">
+                        <!-- 音乐游戏预览 -->
+                        <div class="column is-12 mb-5">
+                            <!-- 音乐游戏预览 -->
+                            <div id="music-game-container" class="game-container">
+                                <div class="game-header">
+                                    <h3><i class="fas fa-music mr-2"></i> 音乐收集游戏</h3>
+                                    <button class="button is-small is-primary" data-tab="game">
+                                        开始游戏
+                                    </button>
+                                </div>
+                                <canvas id="musicPreviewCanvas" height="200"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- 问卷调查卡片 - 修改为整合版 -->
+                        <div class="column is-12 mb-4">
+                            <div class="card questionnaire-card animate__animated animate__pulse animate__delay-1s">
+                                <div class="card-content">
+                                    <div class="media">
+                                        <div class="media-left">
+                                            <figure class="image is-64x64">
+                                                <i class="fas fa-clipboard-list fa-3x" style="color: var(--primary-color);"></i>
+                                            </figure>
+                                        </div>
+                                        <div class="media-content">
+                                            <p class="title is-4" v-text="t('questionnaire')"></p>
+                                            <p class="subtitle is-6" v-text="t('questionnaireDesc')"></p>
+                                        </div>
+                                    </div>
+                                    <div class="content">
+                                        <p v-text="t('questionnaireContent')"></p>
+                                        <div class="has-text-centered mt-3">
+                                            <a href="/?tab=rate&questionnaire=true" class="button is-primary is-medium">
+                                                <i class="fas fa-clipboard-list mr-2"></i> <span v-text="t('startQuestionnaire')"></span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 聊天卡片 -->
+                        <div class="column is-6">
+                            <div class="card">
+                                <div class="card-content">
+                                    <div class="media">
+                                        <div class="media-left">
+                                            <figure class="image is-48x48">
+                                                <i class="fas fa-comments fa-2x" style="color: var(--primary-color);"></i>
+                                            </figure>
+                                        </div>
+                                        <div class="media-content">
+                                            <p class="title is-4">{{ currentLanguage === 'zh' ? '与AI音乐助手聊天' : 'Chat with AI Music Assistant' }}</p>
+                                            <p class="subtitle is-6">{{ currentLanguage === 'zh' ? '获取个性化音乐推荐' : 'Get personalized music recommendations' }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="content">
+                                        <p v-if="currentLanguage === 'zh'">向AI助手咨询音乐推荐、艺术家信息或表达您的情绪，获取一对一音乐建议。</p>
+                                        <p v-else>Consult the AI assistant for music recommendations, artist information, or express your emotions for personalized music suggestions.</p>
+                                    </div>
+                                    <button class="button is-primary is-fullwidth" data-tab="chat">
+                                        <i class="fas fa-robot mr-2"></i> {{ currentLanguage === 'zh' ? '开始聊天' : 'Start Chatting' }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 游戏卡片 -->
+                        <div class="column is-6">
+                            <div class="card">
+                                <div class="card-content">
+                                    <div class="media">
+                                        <div class="media-left">
+                                            <figure class="image is-48x48">
+                                                <i class="fas fa-gamepad fa-2x" style="color: var(--primary-color);"></i>
+                                            </figure>
+                                        </div>
+                                        <div class="media-content">
+                                            <p class="title is-4">{{ currentLanguage === 'zh' ? '音乐收集游戏' : 'Music Collection Game' }}</p>
+                                            <p class="subtitle is-6">{{ currentLanguage === 'zh' ? '玩游戏表达音乐偏好' : 'Express your music preferences through gameplay' }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="content">
+                                        <p v-if="currentLanguage === 'zh'">通过有趣的互动游戏收集音乐元素，帮助AI了解您的音乐偏好，获得更精准的推荐。</p>
+                                        <p v-else>Collect music elements through fun interactive games to help AI understand your preferences for more accurate recommendations.</p>
+                                    </div>
+                                    <button class="button is-primary is-fullwidth" data-tab="game">
+                                        <i class="fas fa-play mr-2"></i> {{ currentLanguage === 'zh' ? '开始游戏' : 'Start Playing' }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="column is-12 mt-4">
+                            <div class="card">
+                                <div class="card-content">
+                                    <p class="title is-4 has-text-centered">
+                                        <i class="fas fa-compact-disc mr-2"></i> 最近推荐
+                                    </p>
+                                    
+                                    <div v-if="recommendations.length > 0" class="columns is-multiline">
+                                        <div class="column is-4" v-for="(song, index) in recommendations.slice(0, 4)" :key="index">
+                                            <div class="card recommendation-item">
+                                                <div class="card-image">
+                                                    <figure class="image is-4by3">
+                                                        <img :src="song.album_image" @error="handleImageError" :alt="song.title">
+                                                    </figure>
+                                                </div>
+                                                <div class="card-content">
+                                                    <p class="title is-5">{{ song.title }}</p>
+                                                    <p class="subtitle is-6">{{ song.artist }}</p>
+                                                    
+                                                    <!-- 添加试听按钮 -->
+                                                    <button class="button is-primary is-small mt-2" 
+                                                            @click="playSongPreview(song.preview_url, song.title, song.artist)">
+                                                        <i class="fas fa-play"></i> 试听
+                                                    </button>
+                                                    
+                                                    <!-- 欢迎页面推荐理由 -->
+                                                    <p class="recommendation-reason" v-if="song.recommendationReason">
+                                                        {{ typeof song.recommendationReason === 'object' ? 
+                                                           song.recommendationReason[currentLanguage] || song.recommendationReason.zh : 
+                                                           song.recommendationReason }}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div v-else class="has-text-centered p-5">
+                                        <i class="fas fa-music fa-3x mb-3" style="color: var(--primary-color);"></i>
+                                        <p>您还没有推荐记录</p>
+                                        <p class="is-size-7 mt-2">评分或与AI聊天后获取推荐</p>
+                                    </div>
+                                    
+                                    <div class="has-text-centered mt-4" v-if="recommendations.length > 0">
+                                        <button class="button is-primary" data-tab="recommend">
+                                            查看所有推荐
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 评分界面 -->
+                    <div v-else-if="currentTab === 'rate'" class="section" transition="fade">
+                        <div class="container">
+                            <h2 class="title is-4">
+                                <i class="fas fa-clipboard-list mr-2"></i> {{ t('rate') }}
+                            </h2>
+                            <p class="subtitle is-6">{{ t('rateSubtitle') }}</p>
+                            
+                            <div class="notification is-primary is-light mb-4">
+                                <p><i class="fas fa-info-circle mr-2"></i> {{ t('questionnaireContent') }}</p>
+                            </div>
+                            
+                            <!-- 问卷UI提示 -->
+                            <div class="box mb-4" v-if="showQuestionnaireUI">
+                                <p>{{ currentLanguage === 'zh' ? '正在加载问卷...' : 'Loading questionnaire...' }}</p>
+                            </div>
+                            
+                            <!-- 问卷进度条 (新增) -->
+                            <div class="questionnaire-progress mb-4" v-if="showQuestionnaireUI">
+                                <div class="questionnaire-progress-bar" :style="{ width: questionnaireProgress + '%' }"></div>
+                            </div>
+                            
+                            <!-- 问卷UI (简化版) -->
+                            <div v-if="showQuestionnaireUI" class="box mb-4">
+                                <h3 class="title is-5">{{ currentLanguage === 'zh' ? '音乐问卷' : 'Music Questionnaire' }}</h3>
+                                <p class="mb-4">{{ currentLanguage === 'zh' ? '请完成此问卷，帮助我们更好地了解您的音乐偏好' : 'Please complete this questionnaire to help us better understand your music preferences' }}</p>
+                                
+                                <div class="questionnaire-actions">
+                                    <button class="action-button" 
+                                            :disabled="currentQuestionStep === 1"
+                                            @click="prevQuestionStep">
+                                        <i class="fas fa-arrow-left"></i> {{ currentLanguage === 'zh' ? '上一步' : 'Previous' }}
+                                    </button>
+                                    <button class="action-button primary" @click="nextQuestionStep">
+                                        {{ currentLanguage === 'zh' ? '下一步' : 'Next' }}
+                                        <i class="fas fa-arrow-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- 心情输入区域 -->
+                            <div class="box mood-input-box mb-4">
+                                <h3 class="title is-5">
+                                    <i class="fas fa-heart mr-2"></i> {{ t('mood') }}
+                                </h3>
+                                <div class="field">
+                                    <label class="label">{{ t('tellMood') }}</label>
+                                    <div class="control">
+                                        <input type="text" class="input" v-model="emotionInput" 
+                                               :placeholder="t('moodPlaceholder')">
+                                    </div>
+                                </div>
+                                <div class="field">
+                                    <div class="control">
+                                        <button class="button is-primary" @click="submitMood">
+                                            <i class="fas fa-save mr-2"></i>
+                                            {{ t('saveMood') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 音乐评分卡片区域 -->
+                            <h3 class="title is-5 mb-3">
+                                <i class="fas fa-star mr-2"></i> {{ currentLanguage === 'zh' ? '歌曲评分' : 'Rate Songs' }}
+                            </h3>
+                            <div class="columns is-multiline">
+                                <div class="column is-6-tablet is-4-desktop" v-for="song in sampleSongs" :key="song.id">
+                                    <div class="card animate__animated animate__fadeIn">
+                                        <div class="card-content">
+                                            <div class="media">
+                                                <div class="media-left">
+                                                    <figure class="image is-48x48">
+                                                        <img :src="song.album_image || '/static/img/default-album.png'" 
+                                                            :alt="song.title" @error="handleImageError">
+                                                    </figure>
+                                                </div>
+                                                <div class="media-content">
+                                                    <p class="title is-5">{{ song.title }}</p>
+                                                    <p class="subtitle is-6">{{ song.artist }}</p>
+                                                    <!-- 添加音乐类型标签 -->
+                                                    <div class="tags">
+                                                        <span class="tag is-primary is-light" v-if="song.genre">
+                                                            {{ song.genre }}
+                                                        </span>
+                                                        <span class="tag is-info is-light" v-if="song.year">
+                                                            {{ song.year }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="media-right">
+                                                    <button class="button is-small" 
+                                                            @click="playSongPreview(song.preview_url)"
+                                                            :disabled="!song.preview_url">
+                                                        <span class="icon">
+                                                            <i class="fas fa-play"></i>
+                                                        </span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="content">
+                                                <div class="rating">
+                                                    <span v-for="n in 5" 
+                                                        :key="n" 
+                                                        class="rating-item" 
+                                                        :class="{'selected': song.rating >= n}"
+                                                        @click="rateSong(song, n)">
+                                                        ★
+                                                    </span>
+                                                </div>
+                                                <p class="has-text-centered has-text-grey-light" v-if="!song.rating">
+                                                    {{ t('notRated') }}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 用户偏好设置表单 -->
+                            <div class="box preferences-box mt-5 mb-4">
+                                <h3 class="title is-5">
+                                    <i class="fas fa-sliders-h mr-2"></i> {{ t('preferences') }}
+                                </h3>
+                                
+                                <!-- 音乐风格偏好 -->
+                                <div class="field">
+                                    <label class="label">{{ t('musicStyle') }}</label>
+                                    <div class="control">
+                                        <div class="select is-multiple is-fullwidth">
+                                            <select multiple v-model="selectedMusicStyles" size="5">
+                                                <option v-for="option in musicStyleOptions" :key="option.value" :value="option.value">
+                                                    {{ option.label }}
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <p class="help">{{ currentLanguage === 'zh' ? '按住Ctrl键可多选' : 'Hold Ctrl to select multiple options' }}</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- 听歌场景 -->
+                                <div class="field">
+                                    <label class="label">{{ t('musicScene') }}</label>
+                                    <div class="control">
+                                        <div class="select is-multiple is-fullwidth">
+                                            <select multiple v-model="selectedMusicScenes" size="4">
+                                                <option v-for="option in musicSceneOptions" :key="option.value" :value="option.value">
+                                                    {{ option.label }}
+                                                </option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 语言偏好 -->
+                                <div class="field">
+                                    <label class="label">{{ t('musicLanguage') }}</label>
+                                    <div class="control">
+                                        <div class="columns is-multiline">
+                                            <div class="column is-4" v-for="option in musicLanguageOptions" :key="option.value">
+                                                <label class="checkbox">
+                                                    <input type="checkbox" :value="option.value" v-model="selectedMusicLanguages">
+                                                    {{ option.label }}
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 年代偏好 -->
+                                <div class="field">
+                                    <label class="label">{{ t('musicEra') }}</label>
+                                    <div class="control">
+                                        <div class="columns is-multiline">
+                                            <div class="column is-3" v-for="option in musicEraOptions" :key="option.value">
+                                                <label class="checkbox">
+                                                    <input type="checkbox" :value="option.value" v-model="selectedMusicEras">
+                                                    {{ option.label }}
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 喜欢的歌手/艺术家 -->
+                                <div class="field">
+                                    <label class="label">{{ t('favoriteArtists') }}</label>
+                                    <div class="control">
+                                        <input type="text" class="input" v-model="favoriteArtists" :placeholder="t('artistPlaceholder')">
+                                    </div>
+                                </div>
+                                
+                                <!-- 每日收听时长 -->
+                                <div class="field">
+                                    <label class="label">{{ t('dailyListening') }}</label>
+                                    <div class="control">
+                                        <div class="select is-fullwidth">
+                                            <select v-model="dailyListeningTime">
+                                                <option value="">{{ currentLanguage === 'zh' ? '请选择...' : 'Please select...' }}</option>
+                                                <option v-for="option in listeningTimeOptions" :key="option.value" :value="option.value">
+                                                    {{ option.label }}
+                                                </option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 保存按钮 -->
+                                <div class="field mt-5">
+                                    <div class="control">
+                                        <button class="button is-primary" @click="saveUserPreferences">
+                                            <i class="fas fa-save mr-2"></i>
+                                            {{ t('savePreferences') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="has-text-centered mt-5" v-if="sampleSongs.length > 0">
+                                <button class="button is-primary is-large" 
+                                        @click="getRecommendations"
+                                        :disabled="!hasRatedEnoughSongs || isLoading"
+                                        :class="{'is-loading': isLoading}">
+                                    <span class="icon"><i class="fas fa-headphones"></i></span>
+                                    <span>{{ t('getRecommendations') }}</span>
+                                </button>
+                                <p class="help" v-if="!hasRatedEnoughSongs">
+                                    {{ t('needMoreRatings') }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 推荐界面 -->
+                    <div v-else-if="currentTab === 'recommend'" class="section" transition="fade">
+                        <div class="container">
+                            <h2 class="title is-4">
+                                <i class="fas fa-headphones"></i> {{ t('recommend') }}
+                            </h2>
+                            <p class="subtitle is-6">{{ t('recommendSubtitle') }}</p>
+                            
+                            <div class="container" v-if="showEmotionDetector && isLoggedIn">
+                                <div class="emotion-input-container">
+                                    <div class="field">
+                                        <label class="label">告诉我你的心情</label>
+                                        <div class="control">
+                                            <input type="text" class="input" v-model="emotionInput" 
+                                                   placeholder="例如：今天心情很低落，需要一些振奋的音乐..." 
+                                                   @keyup.enter="detectEmotion">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="control">
+                                            <button class="button is-primary" @click="detectEmotion">
+                                                <i class="fas fa-magic"></i>
+                                                分析心情并推荐
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="emotion-result" v-if="userEmotion">
+                                        <p><strong>检测到的情绪:</strong> {{ userEmotion.emotion }}</p>
+                                        <button class="button is-small is-info mt-2" @click="getEmotionBasedRecommendations">
+                                            <i class="fas fa-music"></i>
+                                            获取匹配音乐
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="columns">
+                                <div class="column is-8-desktop is-offset-2-desktop">
+                                    <div class="box">
+                                        <div v-if="isLoadingRecommendations" class="has-text-centered py-5">
+                                            <span class="icon is-large">
+                                                <i class="fas fa-spinner fa-pulse fa-2x"></i>
+                                            </span>
+                                            <p>{{ t('loading') }}</p>
+                                        </div>
+                                        
+                                        <div v-else-if="recommendations.length === 0" class="has-text-centered py-5">
+                                            <span class="icon is-large">
+                                                <i class="fas fa-music fa-2x"></i>
+                                            </span>
+                                            <p>{{ t('noRecommendations') }}</p>
+                                            <button class="button is-primary mt-4" @click="currentTab = 'rate'">
+                                                {{ t('rateMore') }}
+                                            </button>
+                                        </div>
+                                        
+                                        <div v-else class="songs-container">
+                                            <div v-for="(song, index) in recommendations" 
+                                                :key="song.id"
+                                                class="recommendation-item">
+                                                <div class="columns is-vcentered">
+                                                    <div class="column is-narrow">
+                                                        <span class="rank-number">{{ index + 1 }}</span>
+                                                    </div>
+                                                    <div class="column is-narrow">
+                                                        <figure class="image is-48x48">
+                                                            <img :src="song.album_image || '/static/img/default-album.png'" 
+                                                                :alt="song.title" @error="handleImageError">
+                                                        </figure>
+                                                    </div>
+                                                    <div class="column">
+                                                        <p class="title is-5">{{ song.title }}</p>
+                                                        <p class="subtitle is-6">{{ song.artist }}</p>
+                                                        <p class="explanation" v-if="song.explanation">
+                                                            <i class="fas fa-lightbulb"></i> {{ song.explanation }}
+                                                        </p>
+                                                    </div>
+                                                    <div class="column is-narrow">
+                                                        <div class="buttons">
+                                                            <button class="button is-small" 
+                                                                    @click="playSongPreview(song.preview_url, song.title, song.artist)">
+                                                                <span class="icon">
+                                                                    <i class="fas fa-play"></i>
+                                                                </span>
+                                                            </button>
+                                                            <button class="button is-small is-primary" @click="likeSong(song)">
+                                                                <span class="icon">
+                                                                    <i class="fas fa-thumbs-up"></i>
+                                                                </span>
+                                                            </button>
+                                                            <button class="button is-small is-danger" @click="dislikeSong(song)">
+                                                                <span class="icon">
+                                                                    <i class="fas fa-thumbs-down"></i>
+                                                                </span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <p class="recommendation-reason" v-if="song.recommendationReason">
+                                                    {{ typeof song.recommendationReason === 'object' ? 
+                                                       song.recommendationReason[currentLanguage] || song.recommendationReason.zh : 
+                                                       song.recommendationReason }}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 聊天界面 -->
+                    <div v-else-if="currentTab === 'chat'" class="section" transition="fade">
+                        <div class="container">
+                            <h2 class="title is-4">
+                                <i class="fas fa-comments"></i> {{ t('chat') }}
+                            </h2>
+                            <p class="subtitle is-6">{{ t('chatSubtitle') }}</p>
+                            
+                            <div class="chat-container">
+                                <div class="chat-messages" ref="chatMessages">
+                                    <div v-if="chatMessages.length === 0" class="has-text-centered py-5">
+                                        <span class="icon is-large">
+                                            <i class="fas fa-robot fa-3x"></i>
+                                        </span>
+                                        <p class="mt-3">{{ t('chatWelcome') }}</p>
+                                    </div>
+                                    
+                                    <div v-for="(message, index) in chatMessages" :key="index"
+                                         :class="message.isUser ? 'user-message' : 'bot-message'"
+                                         class="message-container">
+                                        <div class="message-bubble">
+                                            <!-- 普通消息内容 -->
+                                            <div v-html="formatMessage(message.content)"></div>
+                                            
+                                            <!-- 如果消息包含歌曲推荐，显示歌曲卡片 -->
+                                            <div v-if="message.songs && message.songs.length > 0" class="song-recommendations">
+                                                <div v-for="(song, songIndex) in message.songs" :key="songIndex" class="song-card">
+                                                    <div class="song-card-image">
+                                                        <img :src="song.album_image || 'https://via.placeholder.com/60'" 
+                                                             @error="handleImageError" alt="专辑封面">
+                                                    </div>
+                                                    <div class="song-card-content">
+                                                        <p class="song-title">{{ song.title }}</p>
+                                                        <p class="song-artist">{{ song.artist }}</p>
+                                                        <button class="button is-small is-primary song-listen-btn" 
+                                                                @click="playSongPreview(song.preview_url || 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb8817b6f2d041f15eb1', song.title, song.artist)">
+                                                            <i class="fas fa-play"></i> 试听
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+                                    </div>
+                                    
+                                    <div v-if="isChatLoading" class="chat-message bot-message">
+                                        <div class="message-bubble">
+                                            <div style="display: flex; align-items: center;">
+                                                <span>AI思考中</span>
+                                                <span v-for="i in 3" :key="i" class="dot" style="margin-left: 3px; opacity: 0.7;">•</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="chat-input-container">
+                                    <input type="text" class="input" v-model="currentMessage" 
+                                           placeholder="输入您的问题..." 
+                                           @keyup.enter="sendMessage">
+                                    <button class="button is-primary" 
+                                            @click="sendMessage" 
+                                            :disabled="isChatLoading">
+                                        <i class="fas" :class="isChatLoading ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i>
+                                    </button>
+                                </div>
+                                
+                                <div class="chat-suggestions">
+                                    <button class="button" @click="useSuggestion('推荐一些流行音乐给我')">
+                                        <i class="fas fa-headphones-alt"></i> 推荐流行音乐
+                                    </button>
+                                    <button class="button" @click="useSuggestion('我喜欢周杰伦的歌')">
+                                        <i class="fas fa-heart"></i> 我喜欢周杰伦
+                                    </button>
+                                    <button class="button" @click="useSuggestion('推荐适合工作时听的音乐')">
+                                        <i class="fas fa-briefcase"></i> 工作音乐
+                                    </button>
+                                    <button class="button" @click="useSuggestion('根据我的评分推荐音乐')">
+                                        <i class="fas fa-thumbs-up"></i> 基于评分推荐
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 游戏界面 -->
+                    <div v-else-if="currentTab === 'game'" class="section" transition="fade">
+                        <div class="container">
+                            <h2 class="title is-4">
+                                <i class="fas fa-gamepad"></i> {{ t('game') }}
+                            </h2>
+                            <p class="subtitle is-6">{{ t('gameSubtitle') }}</p>
+                            
+                            <div class="game-container">
+                                <div class="game-header">
+                                    <h3><i class="fas fa-music mr-2"></i> 音乐收集游戏</h3>
+                                    <span>使用方向键或触摸控制</span>
+                                </div>
+                                <div id="game-canvas-container">
+                                    <!-- 游戏画布会在这里动态创建 -->
+                                </div>
+                            </div>
+                            
+                            <div class="box mt-4" v-if="gameResults && Object.keys(gameResults).length > 0">
+                                <h3 class="title is-5 has-text-centered mb-4">
+                                    <i class="fas fa-chart-pie mr-2"></i> 您的音乐偏好
+                                </h3>
+                                
+                                <div class="columns is-multiline">
+                                    <div v-for="(count, genre) in gameResults" :key="genre" class="column is-3">
+                                        <div class="box has-text-centered">
+                                            <p class="is-size-4 mb-2">{{ count }}</p>
+                                            <p>{{ genre }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="has-text-centered mt-4">
+                                    <button class="button is-primary" @click="useGameResultsForRecommendations">
+                                        <i class="fas fa-magic mr-2"></i> 基于这些偏好推荐音乐
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 页脚 - 仿网易云风格 -->
+        <footer class="footer">
+            <div class="container">
+                <div class="columns">
+                    <div class="column is-4">
+                        <h3 class="title is-5" style="color: white;">
+                            <i class="fas fa-headphones-alt mr-2"></i> 深度推荐音乐
+                        </h3>
+                        <p>探索AI驱动的个性化音乐推荐系统，发现您的专属音乐世界。</p>
+                    </div>
+                    
+                    <div class="column is-4">
+                        <h3 class="title is-6" style="color: white;">功能</h3>
+                        <ul>
+                            <li><a href="#" data-tab="rate">{{ t('questionnaire') }}</a></li>
+                            <li><a href="#" data-tab="recommend">个性化推荐</a></li>
+                            <li><a href="#" data-tab="chat">AI音乐助手</a></li>
+                            <li><a href="#" data-tab="game">音乐游戏</a></li>
+                        </ul>
+                    </div>
+                    
+                    <div class="column is-4">
+                        <h3 class="title is-6" style="color: white;">关于我们</h3>
+                        <p>深度推荐音乐是一个基于深度学习的音乐推荐系统，旨在为用户提供高质量的音乐体验。</p>
+                        <div class="mt-3">
+                            <a href="https://github.com" target="_blank" class="mr-3">
+                                <i class="fab fa-github fa-lg"></i>
+                            </a>
+                            <a href="#" class="mr-3">
+                                <i class="fab fa-weibo fa-lg"></i>
+                            </a>
+                            <a href="#" class="mr-3">
+                                <i class="fab fa-weixin fa-lg"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="has-text-centered mt-5">
+                    <p>&copy; {{ new Date().getFullYear() }} 深度推荐音乐 - 音乐AI推荐系统</p>
+                </div>
+            </div>
+        </footer>
+
+        <!-- 在页面底部添加浮动音频播放器 -->
+        <div class="audio-player hidden" id="audioPlayerContainer">
+            <div class="audio-player-controls">
+                <button id="playPauseBtn" class="button is-small is-primary">
+                    <i class="fas fa-pause"></i>
+                </button>
+            </div>
+            <div class="audio-player-info">
+                <p class="audio-player-title" id="audioTitle">歌曲名称</p>
+                <p class="audio-player-artist" id="audioArtist">艺术家</p>
+            </div>
+            <button class="audio-player-close" id="closeAudioPlayer">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- 修改音频播放器元素 -->
+        <audio id="audioPlayer" style="display: none;"></audio>
+    </div>
+
+    <!-- Vue.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+    
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.21.1/dist/axios.min.js"></script>
+    
+    <!-- 音乐游戏JS -->
+    <script src="/static/js/music_game.js"></script>
+    
+    <!-- 情感检测JS -->
+    <script src="/static/js/emotion_detector.js"></script>
+    
+    <!-- 主应用JS -->
+    <script src="/static/js/main.js"></script>
+    
+    <!-- 问卷集成JS -->
+    <script src="/static/js/questionnaire_integration.js"></script>
+</body>
+</html> 

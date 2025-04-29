@@ -1,0 +1,796 @@
+/* 
+ * 音乐推荐系统主样式表
+ * 参考网易云音乐设计风格，使用黑色和紫色为主题
+ */
+
+:root {
+    --primary-color: #8A2BE2;         /* 紫色主色调 */
+    --primary-light: #9B4BFF;         /* 亮紫色悬停效果 */
+    --primary-dark: #6A1B9A;          /* 深紫色按下效果 */
+    --secondary-color: #BB86FC;       /* 次要紫色 */
+    --background-color: #191919;      /* 深黑背景 */
+    --card-background: #252525;       /* 卡片背景 */
+    --hover-background: #333333;      /* 悬停背景 */
+    --text-color: #FFFFFF;            /* 主文字颜色，提高亮度 */
+    --light-text: #eee;               /* 次要文字，提高亮度 */
+    --very-light-text: #FFFFFF;       /* 高亮文字，最高亮度 */
+    --border-color: #3F3F3F;          /* 边框颜色 */
+    --border-radius: 8px;
+    --box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
+    --transition: all 0.3s ease;
+    --primary-gradient: linear-gradient(45deg, #8A2BE2, #9B4BFF);
+    --secondary-gradient: linear-gradient(45deg, #6A1B9A, #BB86FC);
+}
+
+body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    background-image: url('/static/img/music-pattern.svg');
+    background-blend-mode: overlay;
+    background-size: 300px;
+    background-attachment: fixed;
+}
+
+a {
+    color: var(--primary-light);
+    transition: var(--transition);
+}
+
+a:hover {
+    color: var(--primary-color);
+}
+
+/* 标题和文本增强 */
+.title, .subtitle {
+    color: var(--text-color);
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 网易云风格的按钮 */
+.button.is-primary {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(138, 43, 226, 0.2);
+}
+
+.button.is-primary:hover {
+    background-color: var(--primary-light);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(138, 43, 226, 0.3);
+}
+
+.is-active {
+    background-color: var(--primary-color) !important;
+    color: white !important;
+}
+
+/* 导航栏样式 */
+.navbar {
+    background-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-item, .navbar-link {
+    color: #333;
+    font-weight: 500;
+}
+
+.navbar-item:hover, .navbar-link:hover {
+    color: var(--primary-color);
+    background-color: transparent;
+}
+
+.navbar-brand .navbar-item {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+/* 卡片样式 */
+.card {
+    background-color: var(--card-background);
+    color: var(--text-color);
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 15px rgba(138, 43, 226, 0.2);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    overflow: hidden;
+    height: 100%;
+    border: 1px solid rgba(138, 43, 226, 0.1);
+}
+
+.card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 12px 20px rgba(138, 43, 226, 0.4);
+}
+
+.card-content {
+    padding: 1.5rem;
+    color: var(--light-text);
+}
+
+/* 网易云音乐风格的滚动条 */
+.songs-container {
+    max-height: 600px;
+    overflow-y: auto;
+    padding-right: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--secondary-color) #444;
+}
+
+.songs-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.songs-container::-webkit-scrollbar-track {
+    background: #333;
+    border-radius: 10px;
+}
+
+.songs-container::-webkit-scrollbar-thumb {
+    background-color: var(--secondary-color);
+    border-radius: 10px;
+}
+
+/* 音乐评分星星 */
+.rating {
+    display: flex;
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+}
+
+.rating-item {
+    cursor: pointer;
+    font-size: 2.2em;
+    color: #555;
+    transition: color 0.2s, transform 0.1s;
+    margin: 0 2px;
+}
+
+.rating-item:hover {
+    transform: scale(1.2);
+}
+
+.rating-item.selected, .rating:hover .rating-item:hover, 
+.rating:hover .rating-item:hover ~ .rating-item {
+    color: var(--primary-light);
+    text-shadow: 0 0 5px rgba(138, 43, 226, 0.5);
+}
+
+.rating-item.selected ~ .rating-item {
+    color: var(--primary-light);
+}
+
+/* 推荐理由样式 */
+.explanation {
+    font-size: 0.95rem;
+    color: var(--very-light-text);
+    margin-top: 8px;
+    background-color: rgba(138, 43, 226, 0.1);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border-left: 3px solid var(--primary-light);
+}
+
+/* 英雄区域样式 */
+.hero.is-primary {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+    position: relative;
+    overflow: hidden;
+}
+
+.hero.is-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: url('/static/img/music-pattern.svg') center/cover no-repeat;
+    opacity: 0.15;
+    mix-blend-mode: overlay;
+}
+
+.hero-body {
+    position: relative;
+    z-index: 2;
+}
+
+/* 标签样式 */
+.tabs li.is-active a {
+    border-bottom-color: var(--secondary-color);
+    color: var(--secondary-color);
+    font-weight: bold;
+}
+
+.tabs a {
+    transition: all 0.3s ease;
+    color: var(--light-text);
+    opacity: 0.8;
+}
+
+.tabs a:hover {
+    background-color: rgba(138, 43, 226, 0.1);
+    color: var(--text-color);
+    opacity: 1;
+}
+
+/* 页脚样式 */
+.footer {
+    padding: 2.5rem;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: var(--light-text);
+    border-top: 1px solid var(--primary-dark);
+}
+
+/* 聊天区域样式 */
+.chat-container {
+    background-color: #252525;
+    border-radius: var(--border-radius);
+    box-shadow: 0 0 15px rgba(138, 43, 226, 0.3);
+    border: 1px solid rgba(138, 43, 226, 0.2);
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.chat-messages {
+    background-color: #1e1e1e;
+    padding: 1rem;
+    height: 400px;
+    overflow-y: auto;
+}
+
+.user-message .message-bubble {
+    background-color: var(--primary-dark);
+}
+
+.bot-message .message-bubble {
+    background-color: #333;
+}
+
+.message-bubble {
+    padding: 12px 15px;
+    border-radius: 18px;
+    margin-bottom: 10px;
+    max-width: 80%;
+    position: relative;
+    color: var(--text-color);
+}
+
+.chat-input-container {
+    padding: 1rem;
+    background-color: #2a2a2a;
+    border-top: 1px solid #444;
+}
+
+.chat-input-container .input {
+    background-color: #333;
+    color: var(--text-color);
+    border: 1px solid #444;
+    transition: all 0.3s ease;
+}
+
+.chat-input-container .input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(138, 43, 226, 0.3);
+}
+
+/* 聊天建议按钮区域 */
+.chat-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+    background-color: #2a2a2a;
+    border-top: 1px solid #444;
+}
+
+.chat-suggestions .button {
+    background-color: #333;
+    color: var(--light-text);
+    border: 1px solid #444;
+    transition: all 0.3s ease;
+    border-radius: 50px;
+    padding: 0 15px;
+}
+
+.chat-suggestions .button:hover {
+    background-color: var(--primary-dark);
+    color: white;
+    transform: translateY(-2px);
+}
+
+/* 通知容器 */
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    max-width: 300px;
+}
+
+.notification-container .notification {
+    background-color: var(--card-background);
+    color: var(--text-color);
+    border-left: 4px solid var(--primary-color);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    margin-bottom: 10px;
+    animation: slideIn 0.3s ease forwards;
+}
+
+/* 推荐项目样式 */
+.recommendation-item {
+    background-color: var(--card-background);
+    border-radius: var(--border-radius);
+    padding: 15px;
+    margin-bottom: 15px;
+    transition: all 0.3s ease;
+    border-left: 3px solid transparent;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.recommendation-item:hover {
+    transform: translateX(5px);
+    border-left-color: var(--primary-color);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* 登录表单样式 */
+.login-container {
+    padding: 30px;
+    background-color: var(--card-background);
+    border-radius: var(--border-radius);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+    border-top: 4px solid var(--primary-color);
+}
+
+.login-container .input {
+    background-color: #333;
+    color: var(--text-color);
+    border: 1px solid #444;
+    transition: all 0.3s ease;
+}
+
+.login-container .input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(138, 43, 226, 0.3);
+}
+
+.login-container .label {
+    color: var(--text-color);
+}
+
+/* 游戏容器样式 */
+.game-container {
+    background-color: #191919;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(138, 43, 226, 0.3);
+    margin-bottom: 30px;
+}
+
+.game-header {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+    padding: 15px 20px;
+    color: white;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.game-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+}
+
+/* 响应式调整 */
+@media screen and (max-width: 768px) {
+    .card {
+        margin-bottom: 20px;
+    }
+    
+    .chat-suggestions {
+        flex-direction: column;
+    }
+    
+    .chat-suggestions .button {
+        width: 100%;
+        margin-bottom: 8px;
+    }
+}
+
+/* 动画定义 */
+@keyframes slideIn {
+    from {
+        transform: translateX(50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* 游戏相关动画 */
+@keyframes float-down {
+    0% {
+        transform: translateY(-20px);
+    }
+    100% {
+        transform: translateY(calc(100vh + 40px));
+    }
+}
+
+@keyframes collected {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.5);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(0);
+        opacity: 0;
+    }
+}
+
+/* 情感输入容器 */
+.emotion-input-container {
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    animation: slideIn 0.3s ease;
+}
+
+.emotion-input-container .input {
+    background-color: white;
+    border: 1px solid #dbdbdb;
+    padding: 12px;
+    border-radius: 4px;
+    transition: all 0.3s;
+}
+
+.emotion-input-container .input:focus {
+    border-color: #8A2BE2;
+    box-shadow: 0 0 0 2px rgba(138, 43, 226, 0.2);
+}
+
+.emotion-input-container .label {
+    color: #4a4a4a;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.emotion-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    margin-right: 8px;
+    margin-bottom: 8px;
+    border-radius: 16px;
+    font-size: 0.85rem;
+    color: white;
+    background-color: #8A2BE2;
+}
+
+.emotion-badge i {
+    margin-right: 5px;
+}
+
+.emotion-badge.happy { background-color: #FF9800; }
+.emotion-badge.sad { background-color: #3F51B5; }
+.emotion-badge.angry { background-color: #F44336; }
+.emotion-badge.calm { background-color: #4CAF50; }
+.emotion-badge.excited { background-color: #E91E63; }
+.emotion-badge.relaxed { background-color: #009688; }
+.emotion-badge.anxious { background-color: #9C27B0; }
+
+.emotion-result {
+    background-color: rgba(138, 43, 226, 0.05);
+    border-left: 4px solid #8A2BE2;
+    padding: 10px 15px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    border-radius: 0 4px 4px 0;
+}
+
+.emotion-button {
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+}
+
+.emotion-button i {
+    margin-right: 8px;
+    font-size: 18px;
+}
+
+/* 推荐理由 */
+.recommendation-reason {
+    font-style: italic;
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 5px;
+    padding-left: 10px;
+    border-left: 2px solid #8A2BE2;
+}
+
+/* 聊天消息样式改进 */
+.message-container {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+    max-width: 85%;
+    animation: fadeIn 0.3s ease;
+}
+
+.user-message {
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+.bot-message {
+    align-self: flex-start;
+    margin-right: auto;
+}
+
+.message-time {
+    font-size: 0.7rem;
+    color: #999;
+    margin-top: 4px;
+    align-self: flex-end;
+}
+
+.bot-message .message-time {
+    align-self: flex-start;
+}
+
+/* 聊天界面中的歌曲推荐卡片样式 */
+.song-recommendations {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.song-card {
+    display: flex;
+    background-color: rgba(138, 43, 226, 0.05);
+    border-radius: 8px;
+    padding: 10px;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(138, 43, 226, 0.1);
+}
+
+.song-card:hover {
+    background-color: rgba(138, 43, 226, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.song-card-image {
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.song-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.song-card-content {
+    margin-left: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-grow: 1;
+}
+
+.song-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #333;
+    margin-bottom: 3px;
+}
+
+.song-artist {
+    font-size: 0.8rem;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.song-listen-btn {
+    align-self: flex-start;
+    font-size: 0.75rem;
+    height: 28px;
+    padding: 0 10px;
+}
+
+/* 游戏界面样式美化 */
+.game-container {
+    background-color: #2a0044;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(138, 43, 226, 0.3), 
+                inset 0 0 30px rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    position: relative;
+}
+
+.game-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #9B4BFF, #FF5252, #2196F3, #4CAF50);
+    z-index: 1;
+}
+
+.game-header {
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.game-header h3 {
+    color: white;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.game-header h3 i {
+    margin-right: 8px;
+    color: #9B4BFF;
+}
+
+.game-controls {
+    display: flex;
+    gap: 10px;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 400px;
+    background-color: #191919;
+}
+
+/* 音频播放器样式 */
+.audio-player {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    padding: 10px 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 100;
+    transition: all 0.3s ease;
+    transform: translateY(0);
+    max-width: 300px;
+}
+
+.audio-player.hidden {
+    transform: translateY(100px);
+    opacity: 0;
+}
+
+.audio-player-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.audio-player-info {
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.audio-player-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.audio-player-artist {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0;
+}
+
+.audio-player-close {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 5px;
+}
+
+/* 问卷调查卡片样式 - 新增加 */
+.questionnaire-card {
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 8px 15px rgba(255, 64, 129, 0.2);
+    transition: all 0.3s ease;
+    overflow: hidden;
+    position: relative;
+}
+
+.questionnaire-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 50px 50px 0;
+    border-color: transparent var(--primary-color) transparent transparent;
+}
+
+.questionnaire-card .media-left .image {
+    background: var(--primary-gradient);
+    border-radius: 50%;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.questionnaire-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 20px rgba(255, 64, 129, 0.3);
+}
+
+.questionnaire-card .button {
+    background: var(--primary-gradient);
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.questionnaire-card .button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(255, 64, 129, 0.4);
+} 
