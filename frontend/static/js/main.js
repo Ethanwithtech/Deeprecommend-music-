@@ -508,26 +508,55 @@ window.app = new Vue({
       this.isLoading = true;
       this.loginError = '';
       
-      // 模拟登录请求
-      setTimeout(() => {
-        // 测试用户
-        if ((this.email === 'test@example.com' || this.email === 'a@a.com') && this.username === 'test') {
-          this.isLoggedIn = true;
+      // 发送真实的登录请求
+      fetch('/api/user/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: this.username,
+          password: this.password
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        this.isLoading = false;
+        
+        if (data.error) {
+          this.loginError = data.error;
+          this.addNotification(data.error, 'is-danger');
+        } else {
+          // 登录成功
+          console.log('登录成功:', data);
+          
+          // 设置用户信息
           this.currentUser = {
-            id: 'user-123',
-            username: this.username,
-            email: this.email,
-            isDeveloper: true
+            id: data.user_id,
+            username: data.username,
+            email: data.email || '',
+            isDeveloper: data.is_developer || false
           };
+          
+          this.isLoggedIn = true;
+          
+          // 保存到本地存储
           localStorage.setItem('user', JSON.stringify(this.currentUser));
+          localStorage.setItem('userId', this.currentUser.id);
+          localStorage.setItem('username', this.currentUser.username);
+          
+          // 加载初始数据
           this.currentTab = 'welcome';
           this.loadSampleSongs();
-          this.addNotification('登录成功！欢迎回来，' + this.username, 'is-success');
-        } else {
-          this.loginError = '登录失败，请检查用户名和邮箱';
+          this.addNotification('登录成功！欢迎，' + this.currentUser.username, 'is-success');
         }
+      })
+      .catch(error => {
+        console.error('登录请求失败:', error);
         this.isLoading = false;
-      }, 1000);
+        this.loginError = '登录失败，请稍后再试';
+        this.addNotification('登录失败，请稍后再试', 'is-danger');
+      });
     },
     
     // 注册
@@ -535,36 +564,58 @@ window.app = new Vue({
       this.isLoading = true;
       this.registerError = '';
       
-      // 模拟注册请求
-      setTimeout(() => {
-        // 简单验证
-        if (!this.newUsername || !this.newEmail || !this.newPassword) {
-          this.registerError = '请填写所有必填字段';
-          this.isLoading = false;
-          return;
-        }
-        
-        // 模拟成功注册
-        this.isLoggedIn = true;
-        this.currentUser = {
-          id: 'user-' + Math.floor(Math.random() * 1000),
+      // 发送真实的注册请求
+      fetch('/api/user/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           username: this.newUsername,
-          email: this.newEmail,
-          isDeveloper: false
-        };
-        localStorage.setItem('user', JSON.stringify(this.currentUser));
-        this.currentTab = 'welcome';
-        this.loadSampleSongs();
-        this.addNotification('注册成功！欢迎，' + this.newUsername, 'is-success');
+          password: this.newPassword,
+          email: this.newEmail
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
         this.isLoading = false;
-      }, 1000);
+        
+        if (data.error) {
+          this.registerError = data.error;
+          this.addNotification(data.error, 'is-danger');
+        } else {
+          // 注册成功
+          console.log('注册成功:', data);
+          this.addNotification('注册成功！请登录', 'is-success');
+          
+          // 自动填充登录表单，方便用户登录
+          this.username = this.newUsername;
+          this.password = this.newPassword;
+          
+          // 切换到登录页面
+          this.currentTab = 'login';
+        }
+      })
+      .catch(error => {
+        console.error('注册请求失败:', error);
+        this.isLoading = false;
+        this.registerError = '注册失败，请稍后再试';
+        this.addNotification('注册失败，请稍后再试', 'is-danger');
+      });
     },
     
     // 登出
     logout() {
+      // 清除用户状态
       this.isLoggedIn = false;
       this.currentUser = null;
+      
+      // 清除本地存储中的所有用户相关数据
       localStorage.removeItem('user');
+      localStorage.removeItem('userId');
+      localStorage.removeItem('username');
+      
+      // 切换到登录页面
       this.currentTab = 'login';
       this.addNotification('您已成功登出', 'is-info');
       
@@ -573,6 +624,8 @@ window.app = new Vue({
         musicGame.stopGame();
         musicGame = null;
       }
+      
+      console.log('用户已登出，所有状态已重置');
     },
     
     // 检查会话

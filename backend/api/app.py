@@ -113,11 +113,14 @@ logger.info(f"7digital API: {'已配置' if DIGITAL7_API_KEY and DIGITAL7_API_SE
 if not DIGITAL7_API_KEY or not DIGITAL7_API_SECRET:
     logger.warning("未提供7digital API密钥，预览功能可能受限")
 
-# 初始化数据库
+# 数据库连接路径统一使用相对路径
+DB_PATH = os.path.join(ROOT_DIR, 'music_recommender.db')
+logger.info(f"数据库路径: {DB_PATH}")
+
 def init_db():
     """初始化SQLite数据库"""
     logger.info("初始化数据库...")
-    conn = sqlite3.connect('../../music_recommender.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # 创建用户表
@@ -126,7 +129,7 @@ def init_db():
         id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        email TEXT,
+        email TEXT UNIQUE,
         created_at TEXT NOT NULL,
         is_developer BOOLEAN NOT NULL
     )
@@ -198,8 +201,141 @@ def add_developer_account(cursor):
     else:
         logger.info("开发者账号已存在")
 
+def migrate_db():
+    """迁移数据库结构，用于更新已有数据库"""
+    logger.info("检查数据库结构并进行必要迁移...")
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # 检查users表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if cursor.fetchone():
+                # 检查email字段是否存在
+                cursor.execute("PRAGMA table_info(users)")
+                columns = {column[1]: column for column in cursor.fetchall()}
+                
+                # 检查是否需要添加email字段
+                if 'email' not in columns:
+                    logger.info("添加email字段到users表")
+                    # SQLite不允许直接添加UNIQUE约束的列，所以只添加普通列
+                    cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+                    conn.commit()
+                    logger.info("已添加email字段（没有唯一约束）")
+                    
+                    # 检查添加是否成功
+                    cursor.execute("PRAGMA table_info(users)")
+                    columns = {column[1]: column for column in cursor.fetchall()}
+                    if 'email' in columns:
+                        logger.info("确认email字段已成功添加")
+                    else:
+                        logger.error("添加email字段失败")
+            
+            conn.close()
+            logger.info("数据库迁移完成")
+            return True
+        except sqlite3.OperationalError as e:
+            logger.error(f"数据库迁移出错 (尝试 {attempt+1}/{max_retries}): {str(e)}")
+            if 'conn' in locals():
+                conn.close()
+            if attempt == max_retries - 1:
+                logger.error("数据库迁移失败，已达到最大重试次数")
+                return False
+            time.sleep(1)  # 等待1秒后重试
+        except Exception as e:
+            logger.error(f"数据库迁移出现意外错误: {str(e)}", exc_info=True)
+            if 'conn' in locals():
+                conn.close()
+            return False
+
+# 添加一个测试路由来验证数据库连接
+@app.route('/api/test/db')
+def test_db_connection():
+    """测试数据库连接和用户操作"""
+    try:
+        # 连接数据库
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 获取users表信息
+        cursor.execute("PRAGMA table_info(users)")
+        columns = cursor.fetchall()
+        
+        # 获取用户数量
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+        
+        # 获取最近5个用户
+        cursor.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC LIMIT 5")
+        recent_users = cursor.fetchall()
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'message': '数据库连接测试成功',
+            'path': DB_PATH,
+            'exists': os.path.exists(DB_PATH),
+            'size': os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
+            'users_table': {
+                'columns': [{'name': col[1], 'type': col[2]} for col in columns],
+                'user_count': user_count,
+                'recent_users': [
+                    {'id': user[0], 'username': user[1], 'email': user[2], 'created_at': user[3]}
+                    for user in recent_users
+                ]
+            }
+        })
+    except Exception as e:
+        logger.error(f"数据库测试出错: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'数据库测试失败: {str(e)}',
+            'path': DB_PATH,
+            'exists': os.path.exists(DB_PATH),
+            'size': os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+        }), 500
+
+def verify_users_table():
+    """验证用户表是否有正确的结构，如果不正确尝试修复"""
+    logger.info("验证用户表结构...")
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 检查users表是否存在
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        if not cursor.fetchone():
+            logger.error("用户表不存在，将重新初始化数据库")
+            conn.close()
+            init_db()
+            return
+        
+        # 验证表结构
+        cursor.execute("PRAGMA table_info(users)")
+        columns = {column[1]: column for column in cursor.fetchall()}
+        
+        required_columns = ['id', 'username', 'password', 'created_at', 'is_developer']
+        missing_columns = [col for col in required_columns if col not in columns]
+        
+        if missing_columns:
+            logger.error(f"用户表缺少必要列: {missing_columns}")
+            # 这种情况需要手动处理，这里只记录不自动修复
+        
+        conn.close()
+        logger.info("用户表验证完成")
+    except Exception as e:
+        logger.error(f"验证用户表时出错: {str(e)}", exc_info=True)
+
 # 初始化数据库
 init_db()
+# 迁移数据库
+migrate_db()
+# 验证用户表
+verify_users_table()
 
 # 打印诊断信息
 logger.info("Python搜索路径:")
@@ -255,9 +391,6 @@ init_recommender()
 logger.info("初始化Spotify管理器...")
 spotify_manager = SpotifyManager(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 logger.info("Spotify管理器初始化完成")
-
-# 数据库连接路径统一使用相对路径
-DB_PATH = '../../music_recommender.db'
 
 @app.route('/')
 def home():
@@ -327,6 +460,8 @@ def register_user():
     admin_id = data.get('admin_id')  # 如果是管理员添加用户，则提供此参数
     is_developer = data.get('is_developer', False)  # 是否为开发者账号
     
+    logger.info(f"接收到注册请求: 用户名={username}, 邮箱={email}")
+    
     if not username:
         return jsonify({'error': '用户名不能为空'}), 400
     
@@ -355,33 +490,72 @@ def register_user():
             logger.error(f"验证管理员权限时出错: {str(e)}", exc_info=True)
             return jsonify({'error': '验证管理员权限时出错'}), 500
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # 检查用户是否已存在
-    cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-    existing_user = cursor.fetchone()
-    
-    if existing_user:
-        conn.close()
-        return jsonify({'error': '用户名已存在'}), 400
-    
-    # 生成一个随机ID
-    user_id = str(uuid.uuid4())
-    
-    # 添加新用户
-    now = datetime.now().isoformat()
     try:
+        # 确保使用绝对路径连接数据库
+        db_absolute_path = os.path.abspath(DB_PATH)
+        logger.info(f"连接数据库: {db_absolute_path}")
+        conn = sqlite3.connect(db_absolute_path)
+        cursor = conn.cursor()
+        
+        # 检查用户名是否已存在
+        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+        existing_user = cursor.fetchone()
+        
+        if existing_user:
+            conn.close()
+            logger.warning(f"注册失败: 用户名 {username} 已存在")
+            return jsonify({'error': '用户名已存在'}), 400
+        
+        # 检查邮箱是否已存在（手动实现唯一性检查）
+        if email:
+            cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+            existing_email = cursor.fetchone()
+            
+            if existing_email:
+                conn.close()
+                logger.warning(f"注册失败: 邮箱 {email} 已被使用")
+                return jsonify({'error': '此邮箱已被使用'}), 400
+            
+            # 检查邮箱是否与已有用户名相同
+            cursor.execute('SELECT id FROM users WHERE username = ?', (email,))
+            if cursor.fetchone():
+                conn.close()
+                logger.warning(f"注册失败: 邮箱 {email} 与已有用户名相同")
+                return jsonify({'error': '邮箱不能与其他用户的用户名相同'}), 400
+            
+            # 检查邮箱是否与新用户名相同
+            if email == username:
+                conn.close()
+                logger.warning(f"注册失败: 邮箱 {email} 与用户名相同")
+                return jsonify({'error': '邮箱不能与用户名相同'}), 400
+        
+        # 生成一个随机ID
+        user_id = str(uuid.uuid4())
+        
+        # 添加新用户
+        now = datetime.now().isoformat()
+        
         # 存储开发者状态
         developer_value = 1 if is_developer else 0
         
+        # 插入新用户记录
         cursor.execute(
             'INSERT INTO users (id, username, password, email, created_at, is_developer) VALUES (?, ?, ?, ?, ?, ?)', 
             (user_id, username, password, email, now, developer_value)
         )
         conn.commit()
         
+        # 验证用户是否成功添加到数据库
+        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+        check_user = cursor.fetchone()
+        
+        if not check_user:
+            logger.error(f"严重错误: 用户 {username} 注册后无法在数据库中找到")
+            conn.close()
+            return jsonify({'error': '用户注册失败，数据库写入错误'}), 500
+            
         logger.info(f"用户注册成功: {username} (ID: {user_id}, 开发者: {is_developer})")
+        conn.close()
         
         return jsonify({
             'message': '用户注册成功', 
@@ -390,63 +564,70 @@ def register_user():
         })
     except Exception as e:
         logger.error(f"用户注册失败: {str(e)}", exc_info=True)
+        if 'conn' in locals():
+            conn.close()
         return jsonify({'error': f'注册失败: {str(e)}'}), 500
-    finally:
-        conn.close()
 
 @app.route('/api/user/login', methods=['POST'])
 def login_user():
-    """用户登录API，如果用户不存在则创建"""
+    """用户登录API"""
     data = request.json
-    user_id = data.get('user_id')
     username = data.get('username')
     password = data.get('password', '')  # 默认为空密码
-    email = data.get('email', '')  # 添加email字段
+    
+    logger.info(f"接收到登录请求: 用户名={username}")
     
     if not username:
         return jsonify({'error': '用户名不能为空'}), 400
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # 检查用户是否存在
-    cursor.execute("SELECT id, password, is_developer FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
-    
-    if not user:
-        # 创建新用户
-        now = datetime.now().isoformat()
-        # 生成一个随机ID，如果没有提供
-        if not user_id:
-            user_id = str(uuid.uuid4())
+    try:
+        # 确保使用绝对路径连接数据库
+        db_absolute_path = os.path.abspath(DB_PATH)
+        logger.info(f"连接数据库: {db_absolute_path}")
+        conn = sqlite3.connect(db_absolute_path)
+        cursor = conn.cursor()
         
-        cursor.execute(
-            "INSERT INTO users (id, username, password, email, created_at, is_developer) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, username, password, email, now, 0)  # 非开发者账号
-        )
-        conn.commit()
-        is_developer = False
-    else:
+        # 检查用户是否存在
+        cursor.execute("SELECT id, password, is_developer FROM users WHERE username = ?", (username,))
+        user = cursor.fetchone()
+        
+        if not user:
+            logger.warning(f"登录失败: 用户 {username} 不存在")
+            conn.close()
+            return jsonify({'error': '用户不存在，请先注册'}), 404
+        
         # 获取用户信息
         user_id, stored_password, is_developer = user
         is_developer = bool(is_developer)
         
-        # 密码不正确时（针对开发者账号）
-        if is_developer and password != stored_password:
+        # 密码验证
+        if password != stored_password:
+            logger.warning(f"登录失败: 用户 {username} 密码不正确")
             conn.close()
             return jsonify({'error': '密码不正确'}), 401
-    
-    # 记录登录时间
-    logger.info(f"用户 {username} 登录成功 (ID: {user_id}, 开发者: {is_developer})")
-    
-    conn.close()
-    
-    return jsonify({
-        "message": "Login successful", 
-        "user_id": user_id,
-        "username": username,
-        "is_developer": is_developer
-    })
+        
+        # 记录登录时间
+        logger.info(f"用户 {username} 登录成功 (ID: {user_id}, 开发者: {is_developer})")
+        
+        # 获取用户邮箱
+        cursor.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+        email_result = cursor.fetchone()
+        email = email_result[0] if email_result else ""
+        
+        conn.close()
+        
+        return jsonify({
+            "message": "Login successful", 
+            "user_id": user_id,
+            "username": username,
+            "email": email,
+            "is_developer": is_developer
+        })
+    except Exception as e:
+        logger.error(f"用户登录失败: {str(e)}", exc_info=True)
+        if 'conn' in locals():
+            conn.close()
+        return jsonify({'error': f'登录失败: {str(e)}'}), 500
 
 @app.route('/api/songs/sample', methods=['GET'])
 def get_sample_songs():
@@ -1212,7 +1393,7 @@ def save_user_preferences():
     # 将偏好转换为JSON字符串
     preferences_json = json.dumps(preferences, ensure_ascii=False)
     
-    conn = sqlite3.connect('../../music_recommender.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # 检查是否存在该用户的偏好数据
@@ -1278,7 +1459,7 @@ def get_user_preferences(user_id):
     if not user_id:
         return jsonify({'error': '用户ID不能为空'}), 400
     
-    conn = sqlite3.connect('../../music_recommender.db')
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # 获取用户偏好
