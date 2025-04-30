@@ -355,6 +355,14 @@ window.app = new Vue({
             ]
         }
     ],
+    
+    // 新增音乐心理咨询师相关状态
+    therapistMode: true, // 启用心理咨询师模式
+    userSentiments: [], // 记录用户情感历史
+    musicPreferences: {}, // 用户音乐偏好
+    conversationHistory: [], // 对话历史
+    lastProactiveQuestion: null, // 上一次主动提问
+    therapistSuggestions: [] // 心理咨询师的建议
   },
   
   // 计算属性
@@ -479,11 +487,11 @@ window.app = new Vue({
     // 语言切换
     switchLanguage(lang) {
       if (lang === 'zh' || lang === 'en') {
-        this.currentLanguage = lang;
-        // 本地存储用户语言偏好
-        localStorage.setItem('preferredLanguage', lang);
+      this.currentLanguage = lang;
+      // 本地存储用户语言偏好
+      localStorage.setItem('preferredLanguage', lang);
         localStorage.setItem('language', lang);
-        this.addNotification(lang === 'zh' ? '已切换到中文' : 'Switched to English', 'is-success');
+      this.addNotification(lang === 'zh' ? '已切换到中文' : 'Switched to English', 'is-success');
         // 强制更新所有绑定
         this.$forceUpdate();
       }
@@ -515,7 +523,7 @@ window.app = new Vue({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          username: this.username,
+            username: this.username,
           password: this.password
         })
       })
@@ -578,7 +586,7 @@ window.app = new Vue({
       })
       .then(response => response.json())
       .then(data => {
-        this.isLoading = false;
+          this.isLoading = false;
         
         if (data.error) {
           this.registerError = data.error;
@@ -764,6 +772,13 @@ window.app = new Vue({
       });
       this.currentMessage = '';
       
+      // 记录对话历史
+      this.conversationHistory.push({
+          role: 'user',
+          message: userMessage,
+          timestamp: new Date()
+      });
+      
       // 滚动到底部
       this.$nextTick(() => {
           const chatMessages = document.querySelector('.chat-messages');
@@ -776,182 +791,199 @@ window.app = new Vue({
       this.isChatLoading = true;
       
       try {
-          // 情感分析
-          const emotionResult = await this.emotionDetector.detectFromText(userMessage);
+          // 检查消息中是否包含特定指令
+          const hasSpecificRequest = this.checkForSpecificRequests(userMessage);
           
-          // 基于情感检测结果构建AI回复
-          let aiResponse = '';
-          
-          // 音乐推荐关键词检测
-          const recommendKeywords = ['推荐', '音乐', '歌曲', '听什么', '想听', '歌'];
-          const mentalHealthKeywords = ['难过', '伤心', '焦虑', '压力', '不开心', '痛苦', '烦恼', '困扰', '失眠', '抑郁'];
-          const needsRecommendation = recommendKeywords.some(keyword => userMessage.includes(keyword));
-          const needsEmotionalSupport = mentalHealthKeywords.some(keyword => userMessage.includes(keyword));
-          
-          // 如果用户请求音乐推荐
-          if (needsRecommendation) {
-              // 保存情感状态
-              this.userEmotion = emotionResult;
+          if (!hasSpecificRequest) {
+              // 发送到后端AI服务处理
+              const response = await this.sendMessageToAI(userMessage);
               
-              // 根据情感状态生成回复
-              const emotion = emotionResult.emotion;
-              aiResponse = `我感觉到你现在的情绪是"${emotion}"。让我为你推荐一些适合这种心情的音乐...`;
-              
-              // 添加回复
+              // 如果启用了心理咨询师模式，处理回复
+              if (this.therapistMode) {
+                  this.handleTherapistResponse(response);
+              } else {
+                  // 常规模式处理
               this.chatMessages.push({
-                  content: aiResponse,
+                      content: response.message,
                   isUser: false,
                   timestamp: new Date()
               });
               
-              // 在聊天框中直接推荐歌曲
-              // 选择3首情感匹配的歌曲
-              const recommendedSongs = this.sampleSongs
-                  .sort(() => 0.5 - Math.random())
-                  .slice(0, 3)
-                  .map(song => ({
-                      ...song,
-                      // 确保有预览URL
-                      preview_url: song.preview_url || this.previewUrls[Math.floor(Math.random() * this.previewUrls.length)]
-                  }));
-                  
-              // 构建推荐消息
-              let songRecommendations = '根据你的心情，我推荐这些歌曲：\n\n';
-              recommendedSongs.forEach((song, index) => {
-                  songRecommendations += `${index + 1}. ${song.title} - ${song.artist}\n`;
-                  // 添加情感相关的推荐理由
-                  songRecommendations += `   ${this.emotionDetector.generateRecommendationReason(emotion)}\n\n`;
-              });
-              
-              songRecommendations += '你可以点击"试听"按钮来收听这些歌曲。希望这些音乐能够陪伴你度过这段时光。';
-              
-              // 添加歌曲推荐回复
-              setTimeout(() => {
-                  this.chatMessages.push({
-                      content: songRecommendations,
-                      isUser: false,
-                      timestamp: new Date(),
-                      songs: recommendedSongs  // 附加歌曲数据供显示
-                  });
-                  
-                  // 滚动到底部
-                  this.$nextTick(() => {
-                      const chatMessages = document.querySelector('.chat-messages');
-                      if (chatMessages) {
-                          chatMessages.scrollTop = chatMessages.scrollHeight;
-                      }
-                  });
-                  
-                  this.isChatLoading = false;  // 加载完成后设置状态为false
-              }, 1000);
-              
-              // 同时更新推荐页面
-              this.recommendations = recommendedSongs.map(song => {
-                  return {
-                      ...song,
-                      recommendationReason: this.emotionDetector.generateRecommendationReason(emotion)
-                  };
-              });
-          } 
-          // 如果用户需要情感支持
-          else if (needsEmotionalSupport) {
-              // 心理咨询师风格的回复
-              const therapistResponses = {
-                  '高兴': [
-                      '很高兴看到你今天心情不错！这种积极的状态是很珍贵的。你能分享一下是什么让你感到如此开心吗？',
-                      '你的好心情透过文字都能感受到。珍惜这样的时刻，也许有些音乐可以帮你延续这种愉悦感？'
-                  ],
-                  '平静': [
-                      '你看起来很平静，这是思考和感受音乐的好时刻。需要一些能够伴随这种宁静的曲子吗？',
-                      '平静的时刻很适合聆听音乐，让声音和情感一起流动。有什么特定类型的音乐你现在想听吗？',
-                      '在这平静的时刻，适合的音乐可以是一个很好的伴侣。需要我为你推荐一些吗？'
-                  ],
-                  '悲伤': [
-                      '我能感受到你的情绪有些低落。音乐有时能够理解和表达我们无法用言语形容的感受。要不要听些能共鸣你心情的歌曲？',
-                      '当感到悲伤时，合适的音乐可以成为一种情感出口。有时听一些能够理解我们情绪的歌曲，反而会让人感到被理解和安慰。需要我推荐一些吗？',
-                      '悲伤是我们情感体验的重要部分。适当的音乐陪伴可能会给你一些安慰。我可以推荐一些能够陪伴你此刻心情的音乐，如果你想听的话。'
-                  ],
-                  '愤怒': [
-                      '看起来你现在可能有些烦躁。音乐有时可以帮助我们释放和转化这些强烈的情绪。要听一些有力量的音乐来宣泄情绪吗？',
-                      '感到愤怒或烦躁是很自然的情绪反应。有些音乐可以帮助表达和释放这些感受，或者转移注意力。需要我推荐一些吗？',
-                      '你似乎有些不悦。音乐是一种强大的情绪调节工具，无论是想要释放还是平复情绪，都有适合的曲目。需要一些建议吗？'
-                  ],
-                  '兴奋': [
-                      '你的兴奋之情溢于言表！这种充满活力的状态正适合一些节奏强劲、令人振奋的音乐。要来点推荐吗？',
-                      '感受到你的热情和兴奋！这种状态下聆听音乐会特别有感染力。要听一些能够配合和延续这份活力的音乐吗？',
-                      '你的兴奋情绪真让人感染！想要一些能够匹配这种活力四溢状态的音乐推荐吗？'
-                  ],
-                  '放松': [
-                      '享受这份放松的时刻！适合的背景音乐可以让这种舒适感更加完美。需要一些轻柔、舒缓的音乐推荐吗？',
-                      '放松时光配上恰到好处的音乐，是生活中的小确幸。要听一些能够帮你维持这种惬意状态的曲子吗？',
-                      '放松的时刻真是珍贵。如果你想要一些能够伴随这种平和状态的音乐，我很乐意推荐一些。'
-                  ],
-                  '焦虑': [
-                      '我注意到你可能有些紧张或焦虑。音乐有时能够帮助我们找回平静和安全感。需要一些能够帮助放松的音乐建议吗？',
-                      '焦虑的感觉可能令人不适，但这是很常见的情绪反应。一些特定的音乐可以帮助减轻这种感受。要试试看吗？',
-                      '感到焦虑时，正念音乐可能会有所帮助。缓慢的节奏和和谐的旋律能够帮助我们重新找回平静。需要我推荐一些吗？'
-                  ]
-              };
-              
-              // 从对应情绪的心理咨询师回复中随机选择一个
-              const emotionResponses = therapistResponses[emotionResult.emotion] || therapistResponses['平静'];
-              aiResponse = emotionResponses[Math.floor(Math.random() * emotionResponses.length)];
-              
-              // 添加心理咨询师风格回复
-              this.chatMessages.push({
-                  content: aiResponse,
-                  isUser: false,
-                  timestamp: new Date()
-              });
-              
-              // 稍后提供音乐建议
-              setTimeout(() => {
-                  const therapeuticMessage = `音乐疗法经常被用于帮助人们处理情绪。如果你愿意，我可以为你推荐一些适合当前心情的音乐。你只需说"推荐音乐"，我就会为你找些能够共鸣或抚慰你情感的歌曲。`;
-                  
-                  this.chatMessages.push({
-                      content: therapeuticMessage,
-                      isUser: false,
-                      timestamp: new Date()
-                  });
-                  
-                  // 滚动到底部
-                  this.$nextTick(() => {
-                      const chatMessages = document.querySelector('.chat-messages');
-                      if (chatMessages) {
-                          chatMessages.scrollTop = chatMessages.scrollHeight;
-                      }
-                  });
-                  
-                  this.isChatLoading = false;  // 加载完成后设置状态为false
-              }, 2000);
-          } else {
-              // 一般聊天回复
-              const responses = {
-                  '高兴': [
-                      '看起来你心情不错！有什么我能帮你的吗？或许你想听些和你心情同样愉快的音乐？',
-                      '你的好心情感染了我！需要一些音乐推荐来延续这份愉悦吗？',
-                      '真高兴看到你这么开心！音乐是分享和延续快乐的好方式，需要我推荐一些吗？'
-                  ],
-                  '平静': [
-                      '你看起来很平静，这是思考和感受音乐的好时刻。需要一些能够伴随这种宁静的曲子吗？',
-                      '平静的时刻很适合聆听音乐，让声音和情感一起流动。有什么特定类型的音乐你现在想听吗？',
-                      '在这平静的时刻，适合的音乐可以是一个很好的伴侣。需要我为你推荐一些吗？'
-                  ]
-              };
-              
-              // 从对应情绪类别的回复中随机选择一个，如果没有匹配情绪则使用平静类别
-              const emotionResponses = responses[emotionResult.emotion] || responses['平静'];
-              aiResponse = emotionResponses[Math.floor(Math.random() * emotionResponses.length)];
-              
-              // 添加一般聊天回复
-              this.chatMessages.push({
-                  content: aiResponse,
-                  isUser: false,
-                  timestamp: new Date()
-              });
-              
-              this.isChatLoading = false;  // 设置聊天加载状态为false
+                  // 如果有推荐，处理推荐
+                  if (response.recommendations && response.recommendations.length > 0) {
+                      this.handleRecommendations(response.recommendations, response.emotion);
+                  }
+              }
           }
+          
+          this.isChatLoading = false;
+      } catch (error) {
+          console.error('处理聊天消息时出错:', error);
+          this.addNotification('抱歉，处理消息时出现了问题', 'is-danger');
+          this.isChatLoading = false;
+      }
+    },
+    
+    /**
+     * 检查消息是否包含特定指令
+     */
+    checkForSpecificRequests(message) {
+        // 特定指令处理
+        const disableTherapistCmd = /关闭心理咨询/i;
+        const enableTherapistCmd = /开启心理咨询/i;
+        
+        if (disableTherapistCmd.test(message)) {
+            this.therapistMode = false;
+                  this.chatMessages.push({
+                content: "已关闭音乐心理咨询师模式。我将以常规音乐助手的方式为您服务。",
+                      isUser: false,
+                timestamp: new Date()
+            });
+            return true;
+        }
+        
+        if (enableTherapistCmd.test(message)) {
+            this.therapistMode = true;
+            this.chatMessages.push({
+                content: "已开启音乐心理咨询师模式。我将帮助您探索音乐与情感的联系，并提供个性化的音乐建议。",
+                isUser: false,
+                timestamp: new Date()
+            });
+            return true;
+        }
+        
+        return false;
+    },
+    
+    /**
+     * 发送消息到后端AI服务
+     */
+    async sendMessageToAI(message) {
+        try {
+            const response = await axios.post('/api/chat', {
+                user_id: this.currentUser.id || 'guest_user',
+                message: message
+            });
+            
+            if (response.data && response.data.response) {
+                return response.data.response;
+            } else {
+                throw new Error('无效的响应数据');
+            }
+        } catch (error) {
+            console.error('AI服务请求失败:', error);
+                  return {
+                message: "抱歉，我无法连接到服务器。请检查您的网络连接后再试。",
+                emotion: "neutral",
+                recommendations: []
+            };
+        }
+    },
+    
+    /**
+     * 处理心理咨询师模式下的回复
+     */
+    handleTherapistResponse(response) {
+        // 记录情感状态
+        if (response.emotion && response.emotion !== 'neutral') {
+            this.userSentiments.push({
+                emotion: response.emotion,
+                timestamp: new Date()
+            });
+        }
+        
+        // 处理回复消息
+        const message = response.message;
+        
+        // 分离主动问题和回复部分（如果可能）
+        const parts = message.split(/(?<=。|！|\?|？)(?=\S)/);
+        let mainResponse = message;
+        let proactiveQuestion = '';
+        
+        if (parts.length > 1) {
+            // 假设最后一部分是主动问题
+            mainResponse = parts.slice(0, -1).join('');
+            proactiveQuestion = parts[parts.length - 1];
+            this.lastProactiveQuestion = proactiveQuestion;
+        }
+        
+        // 添加主要回复
+        if (mainResponse.trim()) {
+              this.chatMessages.push({
+                content: mainResponse,
+                  isUser: false,
+                  timestamp: new Date()
+              });
+        }
+        
+        // 如果有推荐，处理推荐
+        if (response.recommendations && response.recommendations.length > 0) {
+            this.handleRecommendations(response.recommendations, response.emotion);
+        }
+        
+        // 添加主动问题（如果有）
+        if (proactiveQuestion && proactiveQuestion.trim()) {
+            setTimeout(() => {
+                  this.chatMessages.push({
+                    content: proactiveQuestion,
+                      isUser: false,
+                    timestamp: new Date(),
+                    isProactiveQuestion: true
+                  });
+                  
+                  // 滚动到底部
+                  this.$nextTick(() => {
+                      const chatMessages = document.querySelector('.chat-messages');
+                      if (chatMessages) {
+                          chatMessages.scrollTop = chatMessages.scrollHeight;
+                      }
+                  });
+            }, 1500); // 延迟显示主动问题，更自然
+        }
+        
+        // 记录对话历史
+        this.conversationHistory.push({
+            role: 'assistant',
+            message: message,
+            timestamp: new Date(),
+            emotion: response.emotion
+        });
+    },
+    
+    /**
+     * 处理音乐推荐
+     */
+    handleRecommendations(recommendations, emotion) {
+        // 处理推荐
+        if (!recommendations || recommendations.length === 0) return;
+        
+        // 构建推荐歌曲列表
+        const formattedSongs = recommendations.map(song => ({
+            ...song,
+            // 确保有预览URL
+            preview_url: song.preview_url || this.previewUrls[Math.floor(Math.random() * this.previewUrls.length)]
+        }));
+        
+        // 生成推荐消息
+        let songRecommendations = '根据我的分析，为您推荐以下歌曲：\n\n';
+        formattedSongs.forEach((song, index) => {
+            songRecommendations += `${index + 1}. ${song.title} - ${song.artist}\n`;
+            
+            // 添加推荐理由
+            const reason = song.reason || this.emotionDetector.generateRecommendationReason(emotion);
+            songRecommendations += `   ${reason.zh}\n\n`;
+        });
+        
+        songRecommendations += '您可以点击"试听"按钮来收听这些歌曲。';
+        
+        // 添加推荐消息
+        setTimeout(() => {
+              this.chatMessages.push({
+                content: songRecommendations,
+                  isUser: false,
+                timestamp: new Date(),
+                songs: formattedSongs  // 附加歌曲数据供显示
+              });
           
           // 滚动到底部
           this.$nextTick(() => {
@@ -960,164 +992,157 @@ window.app = new Vue({
                   chatMessages.scrollTop = chatMessages.scrollHeight;
               }
           });
-      } catch (error) {
-          console.error('处理聊天消息时出错:', error);
-          this.addNotification('抱歉，处理消息时出现了问题', 'is-danger');
-          this.isChatLoading = false;  // 确保出错时也设置状态为false
-      }
+        }, 1000);
+        
+        // 同时更新推荐页面
+        this.recommendations = formattedSongs;
     },
     
     // 播放歌曲预览
     async playSongPreview(songOrUrl, songTitle, songArtist) {
       try {
-          // 判断参数类型，支持两种调用方式
-          let url, title, artist;
+        let url = '';
+        let title = '';
+        let artist = '';
+        
+        // 判断参数类型
+        if (typeof songOrUrl === 'object') {
+          // 如果是歌曲对象
+          url = songOrUrl.preview_url;
+          title = songOrUrl.title || songOrUrl.track_name || '未知歌曲';
+          artist = songOrUrl.artist || songOrUrl.artist_name || '未知艺术家';
+        } else {
+          // 如果是直接传递URL和标题
+          url = songOrUrl;
+          title = songTitle || '未知歌曲';
+          artist = songArtist || '未知艺术家';
+        }
+        
+        console.log(`正在尝试播放: ${title} - ${artist}, URL: ${url}`);
+        
+        if (!url || url === 'null' || url === 'undefined') {
+          this.addNotification('没有可用的试听链接', 'is-warning');
+          console.warn('歌曲没有预览URL:', title);
+          
+          // 使用默认备用URL
+          url = 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb8817b6f2d041f15eb1';
+          console.log('使用备用URL:', url);
+        }
 
-          if (typeof songOrUrl === 'object' && songOrUrl !== null) {
-              // 第一种方式：传入歌曲对象
-              url = songOrUrl.preview_url;
-              title = songOrUrl.title;
-              artist = songOrUrl.artist;
-          } else {
-              // 第二种方式：传入单独的参数
-              url = songOrUrl;
-              title = songTitle || '示例歌曲';
-              artist = songArtist || '未知艺术家';
-          }
+        console.log("开始播放音乐预览:", url, title, artist);
 
-          // 常用的示例歌曲数据（当无法获取真实歌曲数据时使用）
-          const sampleSongs = [
-              { title: "Shape of You", artist: "Ed Sheeran", url: this.previewUrls[0] },
-              { title: "Blinding Lights", artist: "The Weeknd", url: this.previewUrls[1] },
-              { title: "Dance Monkey", artist: "Tones and I", url: this.previewUrls[2] },
-              { title: "Circles", artist: "Post Malone", url: this.previewUrls[3] },
-              { title: "Watermelon Sugar", artist: "Harry Styles", url: this.previewUrls[4] }
-          ];
-
-          // 如果没有预览URL，使用预设URL列表中的随机一个
-          if (!url) {
-              const randomSong = sampleSongs[Math.floor(Math.random() * sampleSongs.length)];
-              url = randomSong.url;
-              // 只有在没有提供标题和艺术家时才使用样本数据中的值
-              if (title === '示例歌曲') title = randomSong.title;
-              if (artist === '未知艺术家') artist = randomSong.artist;
-              console.log("使用随机预览URL:", url, title, artist);
-          }
-
-          console.log("开始播放音乐预览:", url, title, artist);
-
-          // 使用audio元素播放
-          const audioPlayer = document.getElementById('audioPlayer');
-          const playerContainer = document.getElementById('audioPlayerContainer');
-          const playPauseBtn = document.getElementById('playPauseBtn');
-          const audioTitle = document.getElementById('audioTitle');
-          const audioArtist = document.getElementById('audioArtist');
-          const closeBtn = document.getElementById('closeAudioPlayer');
-          
-          if (!audioPlayer || !playerContainer) {
-              console.error('找不到音频播放器元素');
-              this.addNotification('音频播放器初始化失败', 'is-danger');
-              return;
-          }
-          
-          // 设置音频属性
-          audioPlayer.crossOrigin = "anonymous";  // 添加跨域支持
-          audioPlayer.preload = "auto";           // 预加载音频
-          audioPlayer.src = url;
-          
-          // 添加音频加载错误处理
-          audioPlayer.onerror = (e) => {
-              console.error("音频加载错误:", e);
-              this.addNotification('音频文件无法加载，可能是URL无效或跨域限制', 'is-danger');
-              
-              // 尝试使用备用URL
-              const backupUrl = this.previewUrls[Math.floor(Math.random() * this.previewUrls.length)];
-              console.log("尝试使用备用URL:", backupUrl);
-              
-              // 使用备用链接重试
-              try {
-                  audioPlayer.src = backupUrl;
-                  audioPlayer.load();
-                  audioPlayer.play().catch(innerError => {
-                      console.error("备用音频播放失败:", innerError);
-                      this.addNotification('播放失败，请尝试使用现代浏览器并确保网络连接正常', 'is-warning');
-                  });
-              } catch (retryError) {
-                  console.error("备用播放尝试失败:", retryError);
-              }
-          };
-          
-          // 更新播放器信息
-          audioTitle.textContent = title;
-          audioArtist.textContent = artist;
-          
-          // 显示播放器
-          playerContainer.classList.remove('hidden');
-          
-          // 加载音频
-          audioPlayer.load();
-          
-          // 播放音频，添加自动重试逻辑
-          const tryPlay = (retryCount = 0) => {
-              if (retryCount >= 3) {
-                  this.addNotification('无法自动播放音频，请点击播放按钮手动播放', 'is-warning');
-                  return;
-              }
-              
-              const playPromise = audioPlayer.play();
-              
-              if (playPromise !== undefined) {
-                  playPromise.then(_ => {
-                      // 播放成功
-                      console.log("音频播放成功");
-                      this.addNotification(`正在播放: ${title} - ${artist}`, 'is-info');
-                      playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                  })
-                  .catch(error => {
-                      // 播放失败
-                      console.error("音频播放失败:", error);
-                      
-                      if (error.name === "NotAllowedError") {
-                          this.addNotification('浏览器阻止了自动播放，请点击播放按钮手动播放', 'is-info');
-                      } else if (retryCount < 2) {
-                          console.log(`播放失败，${retryCount + 1}秒后重试...`);
-                          setTimeout(() => tryPlay(retryCount + 1), 1000);
-                      } else {
-                          this.addNotification('无法播放音频，请检查网络连接并确保使用支持HTML5的浏览器', 'is-warning');
-                      }
-                      
-                      playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-                  });
-              }
-          };
-          
-          // 开始尝试播放
-          tryPlay();
-          
-          // 添加播放/暂停切换
-          playPauseBtn.onclick = function() {
-              if (audioPlayer.paused) {
-                  audioPlayer.play().catch(e => {
-                      console.error("手动播放失败:", e);
-                      playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-                  });
-                  playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-              } else {
-                  audioPlayer.pause();
-                  playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-              }
-          };
-          
-          // 音频结束事件
-          audioPlayer.onended = function() {
-              playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-          };
-          
-          // 关闭按钮
-          closeBtn.onclick = function() {
-              audioPlayer.pause();
-              playerContainer.classList.add('hidden');
-          };
+        // 使用audio元素播放
+        const audioPlayer = document.getElementById('audioPlayer');
+        const playerContainer = document.getElementById('audioPlayerContainer');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const audioTitle = document.getElementById('audioTitle');
+        const audioArtist = document.getElementById('audioArtist');
+        const closeBtn = document.getElementById('closeAudioPlayer');
+        
+        if (!audioPlayer || !playerContainer) {
+            console.error('找不到音频播放器元素');
+            this.addNotification('音频播放器初始化失败', 'is-danger');
+            return;
+        }
+        
+        // 设置音频属性
+        audioPlayer.crossOrigin = "anonymous";  // 添加跨域支持
+        audioPlayer.preload = "auto";           // 预加载音频
+        audioPlayer.src = url;
+        
+        // 添加音频加载错误处理
+        audioPlayer.onerror = (e) => {
+            console.error("音频加载错误:", e);
+            this.addNotification('音频文件无法加载，可能是URL无效或跨域限制', 'is-danger');
+            
+            // 尝试使用备用URL
+            const backupUrl = this.previewUrls[Math.floor(Math.random() * this.previewUrls.length)];
+            console.log("尝试使用备用URL:", backupUrl);
+            
+            // 使用备用链接重试
+            try {
+                audioPlayer.src = backupUrl;
+                audioPlayer.load();
+                audioPlayer.play().catch(innerError => {
+                    console.error("备用音频播放失败:", innerError);
+                    this.addNotification('播放失败，请尝试使用现代浏览器并确保网络连接正常', 'is-warning');
+                });
+            } catch (retryError) {
+                console.error("备用播放尝试失败:", retryError);
+            }
+        };
+        
+        // 更新播放器信息
+        audioTitle.textContent = title;
+        audioArtist.textContent = artist;
+        
+        // 显示播放器
+        playerContainer.classList.remove('hidden');
+        
+        // 加载音频
+        audioPlayer.load();
+        
+        // 播放音频，添加自动重试逻辑
+        const tryPlay = (retryCount = 0) => {
+            if (retryCount >= 3) {
+                this.addNotification('无法自动播放音频，请点击播放按钮手动播放', 'is-warning');
+                return;
+            }
+            
+            const playPromise = audioPlayer.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.then(_ => {
+                    // 播放成功
+                    console.log("音频播放成功");
+                    this.addNotification(`正在播放: ${title} - ${artist}`, 'is-info');
+                    playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                })
+                .catch(error => {
+                    // 播放失败
+                    console.error("音频播放失败:", error);
+                    
+                    if (error.name === "NotAllowedError") {
+                        this.addNotification('浏览器阻止了自动播放，请点击播放按钮手动播放', 'is-info');
+                    } else if (retryCount < 2) {
+                        console.log(`播放失败，${retryCount + 1}秒后重试...`);
+                        setTimeout(() => tryPlay(retryCount + 1), 1000);
+                    } else {
+                        this.addNotification('无法播放音频，请检查网络连接并确保使用支持HTML5的浏览器', 'is-warning');
+                    }
+                    
+                    playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+                });
+            }
+        };
+        
+        // 开始尝试播放
+        tryPlay();
+        
+        // 添加播放/暂停切换
+        playPauseBtn.onclick = function() {
+            if (audioPlayer.paused) {
+                audioPlayer.play().catch(e => {
+                    console.error("手动播放失败:", e);
+                    playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+                });
+                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            } else {
+                audioPlayer.pause();
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+            }
+        };
+        
+        // 音频结束事件
+        audioPlayer.onended = function() {
+            playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+        };
+        
+        // 关闭按钮
+        closeBtn.onclick = function() {
+            audioPlayer.pause();
+            playerContainer.classList.add('hidden');
+        };
       } catch (error) {
           console.error("播放音乐出错:", error);
           this.addNotification('播放音乐时发生错误', 'is-danger');
@@ -1543,27 +1568,37 @@ window.app = new Vue({
     // 初始化情感检测器
     this.initEmotionDetector();
     
-    // 为audio元素添加事件监听器
-    const audioPlayer = document.getElementById('audioPlayer');
-    if (audioPlayer) {
-      audioPlayer.onended = () => {
-        const closeBtn = document.getElementById('closeAudioPlayer');
-        if (closeBtn) {
-          closeBtn.click();
-        }
-      };
+    // 初始化心理咨询师模式
+    this.therapistMode = true;
+    console.log("已启用音乐心理咨询师模式");
+    
+    // 获取URL参数
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // 如果有tab参数，切换到相应标签
+    if (urlParams.has('tab')) {
+      const tab = urlParams.get('tab');
+      if (['welcome', 'rate', 'recommend', 'chat', 'game'].includes(tab)) {
+        this.currentTab = tab;
+      }
     }
     
-    // 检查URL参数
-    const urlParams = new URLSearchParams(window.location.search);
-    const tabParam = urlParams.get('tab');
-    if (tabParam && ['welcome', 'rate', 'recommend', 'chat', 'game'].includes(tabParam)) {
-      this.currentTab = tabParam;
-      
-      // 新增：如果是rate标签页，检查是否需要显示问卷UI
-      if (tabParam === 'rate' && urlParams.get('questionnaire') === 'true') {
-        this.showQuestionnaireUI = true;
-      }
+    // 如果有问卷参数，显示问卷
+    if (urlParams.has('questionnaire') && urlParams.get('questionnaire') === 'true') {
+      this.showQuestionnaireUI = true;
+    }
+    
+    // 绑定关闭音频播放器事件
+    const closeAudioBtn = document.getElementById('closeAudioPlayer');
+    if (closeAudioBtn) {
+      closeAudioBtn.onclick = function() {
+    const audioPlayer = document.getElementById('audioPlayer');
+        const playerContainer = document.getElementById('audioPlayerContainer');
+        if (audioPlayer && playerContainer) {
+          audioPlayer.pause();
+          playerContainer.classList.add('hidden');
+        }
+      };
     }
   }
 });

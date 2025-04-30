@@ -423,7 +423,7 @@ class HybridMusicRecommender:
             return False
 
         logger.info("使用MSD数据集进行预训练...")
-        
+
         try:
             # 1. 导入MSD处理模块
             try:
@@ -558,7 +558,7 @@ class HybridMusicRecommender:
             
             logger.info("MSD预训练完成")
             return True
-            
+
         except Exception as e:
             logger.error(f"MSD预训练失败: {str(e)}")
             import traceback
@@ -1907,18 +1907,23 @@ class HybridMusicRecommender:
             logger.error(f"查找艺术家歌曲时出错: {str(e)}")
             return []
 
-    def recommend(self, user_id, context=None, top_n=10):
+    def recommend(self, user_id, context=None, top_n=10, num_recommendations=None, include_rated=False):
         """
         为用户生成推荐，自动处理不完整数据
 
         参数:
             user_id: 用户ID
             context: 上下文信息 (可选)
-            top_n: 推荐数量
+            top_n: 推荐数量 (已废弃，保留向后兼容)
+            num_recommendations: 推荐数量 (新参数)
+            include_rated: 是否包含已评分的歌曲
 
         返回:
             推荐列表
         """
+        # 使用num_recommendations参数(如果提供)，否则使用top_n
+        n = num_recommendations if num_recommendations is not None else top_n
+        
         # 标准化用户数据
         self.normalize_user_data(user_id)
 
@@ -1930,8 +1935,32 @@ class HybridMusicRecommender:
             user_id=user_id,
             context=context,
             liked_songs=liked_songs,
-            top_n=top_n
+            top_n=n
         )
+
+        # 如果需要排除已评分歌曲
+        if not include_rated and self.ratings_df is not None:
+            # 获取用户已评分的歌曲
+            rated_songs = set(self.ratings_df[self.ratings_df['user_id'] == user_id]['song_id'].tolist())
+            # 过滤掉已评分的歌曲
+            recommendations = [rec for rec in recommendations if rec['song_id'] not in rated_songs]
+            
+            # 如果过滤后推荐数量不足，可以获取更多推荐
+            if len(recommendations) < n:
+                more_recs = self.get_hybrid_recommendations(
+                    user_id=user_id,
+                    context=context,
+                    liked_songs=liked_songs,
+                    top_n=n*2  # 获取更多，以确保过滤后数量足够
+                )
+                # 添加未出现在当前推荐中的歌曲
+                current_ids = set(rec['song_id'] for rec in recommendations)
+                for rec in more_recs:
+                    if rec['song_id'] not in current_ids and rec['song_id'] not in rated_songs:
+                        recommendations.append(rec)
+                        current_ids.add(rec['song_id'])
+                        if len(recommendations) >= n:
+                            break
 
         # 为每个推荐添加预测评分和一个简单的解释
         for rec in recommendations:
@@ -1942,7 +1971,7 @@ class HybridMusicRecommender:
             # 生成简单的推荐解释
             rec['explanation'] = self._generate_recommendation_explanation(user_id, rec, context)
 
-        return recommendations
+        return recommendations[:n]
 
     def _get_user_liked_songs(self, user_id, rating_threshold=4.0):
         """获取用户喜欢的歌曲ID列表"""

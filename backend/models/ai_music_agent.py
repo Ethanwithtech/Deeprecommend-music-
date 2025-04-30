@@ -8,6 +8,7 @@ import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime
+from backend.utils.ai_service import AIService
 
 # 配置日志
 logging.basicConfig(
@@ -24,48 +25,61 @@ except ImportError:
     class MusicRecommender:
         def __init__(self, *args, **kwargs):
             pass
-        def recommend(self, user_id, top_n=5, context=None):
+        def recommend(self, user_id, num_recommendations=5, context=None, include_rated=False):
             return []
 
 class MusicRecommenderAgent:
     """音乐推荐代理类，处理用户交互和个性化推荐"""
     
-    def __init__(self, data_dir="data", use_msd=False, load_pretrained=False, pretrained_model_path=None, recommender=None):
-        """
-        初始化推荐代理
+    def __init__(self, data_dir="data", use_msd=False, recommender=None):
+        """初始化音乐推荐代理
         
         参数:
             data_dir: 数据目录
-            use_msd: 是否使用百万歌曲数据集
-            load_pretrained: 是否加载预训练模型
-            pretrained_model_path: 预训练模型路径
-            recommender: 外部传入的推荐器实例
+            use_msd: 是否使用Million Song Dataset
+            recommender: 可选参数，直接传入推荐引擎实例
         """
-        # 如果外部传入了推荐器实例，直接使用它
-        if recommender is not None:
-            self.hybrid_recommender = recommender
-            logger.info("使用外部传入的推荐器实例")
-        else:
-            # 初始化内部推荐引擎
-            self.hybrid_recommender = MusicRecommender(
-                data_dir=data_dir,
-                use_msd=use_msd,
-                force_retrain=False
-            )
-            logger.info("创建了新的推荐器实例")
+        # 初始化AI服务
+        self.ai_service = AIService()
         
-        # 用户数据存储
+        # 初始化用户数据存储
         self.user_data = {}
         
-        # 用户模型版本记录
+        # 追踪用户对话次数
+        self.conversation_counts = {}
+        
+        # 用户模型版本跟踪
         self.user_model_versions = {}
         
-        # 创建数据目录（如果不存在）
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
+        # 用户情绪缓存
+        self.user_emotions = {}
         
-        # 尝试加载用户数据
-        self.load_user_data()
+        # 初始化推荐引擎
+        if recommender:
+            # 使用传入的推荐引擎
+            self.hybrid_recommender = recommender
+            logger.info("使用传入的推荐引擎实例")
+        else:
+            # 创建新的推荐引擎实例
+            try:
+                from backend.models.hybrid_music_recommender import HybridMusicRecommender
+                self.hybrid_recommender = HybridMusicRecommender(data_dir=data_dir, use_msd=use_msd)
+                logger.info("成功创建HybridMusicRecommender实例")
+            except ImportError as e:
+                logger.error(f"无法导入HybridMusicRecommender: {e}")
+                # 如果无法导入HybridMusicRecommender，尝试使用HybridRecommender
+                try:
+                    from backend.models.hybrid_recommender import HybridRecommender
+                    self.hybrid_recommender = HybridRecommender()
+                    logger.info("使用HybridRecommender替代")
+                except ImportError:
+                    # 如果所有推荐引擎都无法导入，使用基础推荐引擎
+                    from backend.models.recommendation_engine import MusicRecommender
+                    self.hybrid_recommender = MusicRecommender(data_dir=data_dir)
+                    logger.info("无法导入所有高级推荐引擎，使用MusicRecommender替代")
+        
+        # 加载音乐元数据
+        self._load_metadata()
     
     def process_message(self, user_id, message):
         """
@@ -81,6 +95,12 @@ class MusicRecommenderAgent:
         # 初始化用户数据
         self._initialize_user_data(user_id)
         
+        # 更新对话计数
+        if user_id not in self.conversation_counts:
+            self.conversation_counts[user_id] = 0
+        self.conversation_counts[user_id] += 1
+        conversation_count = self.conversation_counts[user_id]
+        
         # 记录消息
         self.user_data[user_id]['messages'].append({
             'text': message,
@@ -92,41 +112,94 @@ class MusicRecommenderAgent:
         if preferences:
             self._update_user_preferences(user_id, preferences)
         
-        # 分析情感
-        emotion = self._analyze_emotion(message)
+        # 使用AI服务分析情感
+        try:
+            emotion_data = self.ai_service.analyze_emotion(message)
+            emotion = emotion_data.get('emotion', 'neutral')
+            emotion_intensity = emotion_data.get('intensity', 0.5)
+            emotion_description = emotion_data.get('description', '')
+            comfort_message = emotion_data.get('comfort_message', '')
+            music_suggestions = emotion_data.get('music_suggestion', '')
+        except Exception as e:
+            # 降级到简单情感分析
+            emotion = self._analyze_emotion(message)
+            emotion_intensity = 0.5
+            emotion_description = ''
+            comfort_message = ''
+            music_suggestions = ''
         
         # 记录情感
         if emotion != 'neutral':
             self.user_data[user_id]['mood_data'].append({
                 'mood': emotion,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'intensity': emotion_intensity,
+                'description': emotion_description
             })
+            
+            # 为每种情绪更新用户偏好
+            if 'moods' not in self.user_data[user_id]['preferences']:
+                self.user_data[user_id]['preferences']['moods'] = {}
+            if emotion in self.user_data[user_id]['preferences']['moods']:
+                self.user_data[user_id]['preferences']['moods'][emotion] += 1
+            else:
+                self.user_data[user_id]['preferences']['moods'][emotion] = 1
         
-        # 如果消息包含请求推荐的内容，生成推荐
-        if any(keyword in message.lower() for keyword in ['推荐', '建议', '喜欢什么', '听什么', 'recommend']):
-            # 获取上下文
-            context = {'emotion': emotion}
+        # 不管用户是否明确要求，都基于情绪提供推荐
+        # 获取上下文
+        context = {'emotion': emotion}
+        try:
+            recommendations = self.hybrid_recommender.recommend(user_id, num_recommendations=5, context=context, include_rated=False)
+        except Exception as e:
+            logger.warning(f"获取推荐失败: {e}")
+            # 如果用户不存在或模型未训练，返回空推荐
+            recommendations = []
+        
+        # 构建回复
+        response_text = ""
+        
+        # 1. 添加安慰消息
+        if comfort_message:
+            response_text += f"{comfort_message}\n\n"
+        elif emotion in ['sad', 'angry', 'anxious', 'stressed', 'depressed', 'lonely', 'tired']:
             try:
-                recommendations = self.hybrid_recommender.recommend(user_id, top_n=5, context=context)
-                
+                old_comfort_message = self.ai_service.get_comfort_message(
+                    emotion, emotion_intensity, emotion_description
+                )
+                if old_comfort_message:
+                    response_text += f"{old_comfort_message}\n\n"
             except:
-                # 如果用户不存在或模型未训练，返回空推荐
-                recommendations = []
-            
-            # 构建响应
-            response = {
-                'emotion': emotion,
-                'recommendations': recommendations,
-                'message': self._generate_response(emotion, recommendations)
-            }
-            
-            return response
+                pass
         
-        # 默认回复
+        # 2. 添加推荐回复
+        if recommendations:
+            response_text += self._generate_response(emotion, recommendations)
+        elif music_suggestions:
+            response_text += f"根据您当前的{emotion_description}，我想为您推荐一些音乐。\n{music_suggestions}"
+        else:
+            # 没有推荐时
+            user_history = self.user_data[user_id]['messages']
+            user_preferences = self.user_data[user_id].get('preferences', {})
+            
+            # 生成主动问题
+            try:
+                proactive_question = self.ai_service.generate_proactive_question(
+                    user_history, 
+                    user_preferences, 
+                    current_emotion=emotion,
+                    conversation_count=conversation_count
+                )
+                response_text += proactive_question
+            except Exception as e:
+                logger.error(f"生成主动问题失败: {e}")
+                response_text += "您能告诉我更多关于您喜欢的音乐吗？这样我可以为您提供更精准的推荐。"
+        
+        # 返回结果
         return {
             'emotion': emotion,
-            'recommendations': [],
-            'message': '我了解您的喜好了，有需要音乐推荐时随时告诉我。'
+            'emotion_description': emotion_description,
+            'recommendations': recommendations,
+            'message': response_text
         }
     
     def process_game_data(self, user_id, game_data):
@@ -224,102 +297,118 @@ class MusicRecommenderAgent:
             'rating': rating
         }
     
-    def get_mood_based_recommendations(self, user_id, mood, top_n=5):
+    def get_mood_based_recommendations(self, user_id, mood, num_recommendations=5):
         """
-        获取基于情绪的推荐
+        获取基于心情的推荐
         
         参数:
             user_id: 用户ID
-            mood: 情绪
-            top_n: 推荐数量
+            mood: 心情/情绪
+            num_recommendations: 推荐数量
             
         返回:
-            推荐结果
+            推荐歌曲列表
         """
-        # 获取上下文信息
-        context = self._get_current_context(user_id)
-        context['mood'] = mood
+        # 更新上下文
+        context = {'emotion': mood}
         
-        # 使用情绪上下文生成推荐
+        # 使用混合推荐器
         try:
-            recommendations = self.hybrid_recommender.recommend(user_id, top_n=top_n, context=context)
+            recommendations = self.hybrid_recommender.recommend(
+                user_id, 
+                num_recommendations=num_recommendations, 
+                context=context,
+                include_rated=False
+            )
             return recommendations
         except Exception as e:
-            logger.error(f"情绪推荐出错: {str(e)}")
-            return []
+            logger.error(f"基于情绪的推荐失败: {e}")
+            
+            # 尝试使用备用API - 情绪推荐
+            try:
+                return self.hybrid_recommender.get_recommendations_by_emotion(
+                    mood, 
+                    top_n=num_recommendations
+                )
+            except:
+                # 返回空列表
+                return []
     
-    def get_activity_based_recommendations(self, user_id, activity, top_n=5):
+    def get_activity_based_recommendations(self, user_id, activity, num_recommendations=5):
         """
         获取基于活动的推荐
         
         参数:
             user_id: 用户ID
             activity: 活动类型
-            top_n: 推荐数量
+            num_recommendations: 推荐数量
             
         返回:
-            推荐结果
+            推荐歌曲列表
         """
-        # 记录活动信息
-        self._initialize_user_data(user_id)
-        self.user_data[user_id]['activity_data'].append({
-            'activity': activity,
-            'timestamp': datetime.now().isoformat()
-        })
+        # 活动映射为情绪/场景
+        activity_to_mood = {
+            'workout': 'energetic',
+            'study': 'focus',
+            'relax': 'calm',
+            'sleep': 'peaceful',
+            'party': 'happy',
+            'commute': 'upbeat',
+            'travel': 'adventure'
+        }
         
-        # 获取上下文信息
-        context = self._get_current_context(user_id)
-        context['activity'] = activity
+        # 将活动转化为情绪
+        mood = activity_to_mood.get(activity.lower(), 'neutral')
         
-        # 使用活动上下文生成推荐
+        # 更新上下文
+        context = {
+            'emotion': mood,
+            'activity': activity
+        }
+        
+        # 使用混合推荐器
         try:
-            recommendations = self.hybrid_recommender.recommend(user_id, top_n=top_n, context=context)
-            # 对推荐结果进行后处理，例如根据活动类型调整顺序
-            if activity == 'workout':
-                # 对于锻炼，优先推荐节奏感强的歌曲
-                pass
-            elif activity == 'study':
-                # 对于学习，优先推荐平静的歌曲
-                pass
-            
+            recommendations = self.hybrid_recommender.recommend(
+                user_id, 
+                num_recommendations=num_recommendations, 
+                context=context,
+                include_rated=False
+            )
             return recommendations
         except Exception as e:
-            logger.error(f"活动推荐出错: {str(e)}")
-            return []
+            logger.error(f"基于活动的推荐失败: {e}")
+            
+            # 尝试使用备用API - 情绪推荐
+            try:
+                return self.hybrid_recommender.get_recommendations_by_emotion(
+                    mood, 
+                    top_n=num_recommendations
+                )
+            except:
+                # 返回空列表
+                return []
     
-    def get_artist_based_recommendations(self, user_id, artist_name, top_n=5):
+    def get_artist_based_recommendations(self, user_id, artist_name, num_recommendations=5):
         """
         获取基于艺术家的推荐
         
         参数:
             user_id: 用户ID
             artist_name: 艺术家名称
-            top_n: 推荐数量
+            num_recommendations: 推荐数量
             
         返回:
-            推荐结果
+            推荐歌曲列表
         """
-        # 更新用户的艺术家偏好
-        self._initialize_user_data(user_id)
-        if 'artists' not in self.user_data[user_id]['preferences']:
-            self.user_data[user_id]['preferences']['artists'] = []
-        
-        # 添加艺术家到用户偏好
-        artists = self.user_data[user_id]['preferences']['artists']
-        if artist_name not in artists:
-            artists.append(artist_name)
-        
-        # 获取基于艺术家的推荐
+        # 尝试从推荐引擎获取歌曲
         try:
-            # 如果可能，使用专用的基于艺术家的推荐方法
-            if hasattr(self.hybrid_recommender, 'recommend_by_artist'):
-                return self.hybrid_recommender.recommend_by_artist(artist_name, top_n)
-            
-            # 否则使用一般推荐，带有艺术家上下文
-            context = {'artist': artist_name}
-            return self.hybrid_recommender.recommend(user_id, top_n=top_n, context=context)
+            artist_songs = self.hybrid_recommender.get_recommendations_by_artist(
+                artist_name=artist_name, 
+                top_n=num_recommendations
+            )
+            return artist_songs
         except Exception as e:
-            logger.error(f"艺术家推荐出错: {str(e)}")
+            logger.error(f"基于艺术家的推荐失败: {e}")
             return []
     
     def save_user_data(self, output_dir="user_data"):
@@ -720,14 +809,79 @@ class MusicRecommenderAgent:
     
     def _generate_response(self, emotion, recommendations):
         """根据情感和推荐生成回复"""
-        if emotion == 'happy':
-            return f"看起来您心情不错！这里有一些欢快的歌曲推荐给您。"
-        elif emotion == 'sad':
-            return f"感觉您有点低落，这些歌曲可能会让您感觉好些。"
-        elif emotion == 'calm':
-            return f"为您的平静时光准备了这些轻松的曲目。"
-        else:
-            return f"这是一些您可能喜欢的歌曲。"
+        try:
+            # 使用AI服务生成更个性化的回复
+            context = {
+                "emotion": emotion,
+                "recommendations_count": len(recommendations),
+                "has_recommendations": len(recommendations) > 0
+            }
+            
+            # 根据不同情绪和是否有推荐设置消息模板
+            if not recommendations or len(recommendations) == 0:
+                # 没有推荐时的情况已经在process_message中处理
+                return ""
+            
+            # 有推荐时，结合情绪和推荐
+            if emotion == 'happy' or emotion == 'excited' or emotion == 'joyful':
+                response = f"作为MelodyMind音乐心理治疗师，我能感受到您当前愉快的情绪状态，这种积极的能量非常珍贵。音乐可以帮助我们延续和放大这种愉悦感。我为您精选了{len(recommendations)}首能够维持这种积极情绪的歌曲，它们的节奏和旋律能够与您当前的心情产生美妙的共鸣。"
+            elif emotion == 'sad' or emotion == 'depressed' or emotion == 'disappointed' or emotion == 'melancholy':
+                response = f"作为MelodyMind音乐心理治疗师，我理解您现在可能感到有些低落，这是一种完全自然的情绪体验。音乐有时能成为我们情感的出口，帮助我们表达难以言说的感受。我为您找到了{len(recommendations)}首可能与您此刻心情产生共鸣的歌曲，它们或许能带给您一些慰藉，让您感到被理解。"
+            elif emotion == 'calm' or emotion == 'relaxed' or emotion == 'peaceful':
+                response = f"作为MelodyMind音乐心理治疗师，您当前平静的状态是内心平衡的体现。音乐可以帮助我们维持这种宁静感，创造出一个安全的心灵空间。以下是{len(recommendations)}首我认为能够配合并延续您此刻心境的歌曲，它们柔和的音调和节奏可以帮助您保持这种宝贵的内心平静。"
+            elif emotion == 'anxious' or emotion == 'stressed' or emotion == 'nervous' or emotion == 'worried':
+                response = f"作为MelodyMind音乐心理治疗师，我能理解焦虑的感觉有时会让人不舒服，但这也是我们对环境的自然反应。音乐有助于我们调节神经系统，减轻这种紧张感。我为您挑选了{len(recommendations)}首经研究表明可能有助于缓解焦虑情绪的音乐，它们稳定的节奏和和谐的旋律可以帮助您的身心逐渐放松。"
+            elif emotion == 'angry' or emotion == 'frustrated' or emotion == 'irritated':
+                response = f"作为MelodyMind音乐心理治疗师，感到愤怒或烦躁是我们面对障碍时的自然反应，这表明您关心的事物受到了挑战。音乐可以成为情绪宣泄和转化的安全方式。我为您推荐{len(recommendations)}首特别挑选的歌曲，它们可以帮助您表达、理解并逐渐转化这些强烈的情绪，找回内心的平衡。"
+            elif emotion == 'tired' or emotion == 'exhausted' or emotion == 'fatigued':
+                response = f"作为MelodyMind音乐心理治疗师，疲惫是身心需要休息的信号，请记得给自己足够的恢复时间。音乐既可以提供舒缓放松的体验，也能带来温和的能量提升。考虑到您可能感到疲惫，我为您挑选了{len(recommendations)}首精心选择的歌曲，它们或许能帮助您找到舒适的休息状态，或带来一些轻柔的活力。"
+            elif emotion == 'nostalgic' or emotion == 'reminiscent':
+                response = f"作为MelodyMind音乐心理治疗师，怀旧的心情是一种特别的情感体验，它连接着我们的过去和现在。音乐有独特的力量唤起记忆和情感。这{len(recommendations)}首歌曲可能会与您此刻的怀旧情绪相呼应，或许能够帮助您重新连接那些珍贵的回忆，感受它们带来的温暖和意义。"
+            elif emotion == 'lonely' or emotion == 'isolated':
+                response = f"作为MelodyMind音乐心理治疗师，感到孤独时，音乐可以成为一种无形的陪伴和情感连接。我为您找到了{len(recommendations)}首歌曲，希望它们能让您感到被理解和陪伴。这些音乐作品可能会让您感受到艺术家和听众之间的共鸣，提醒我们即使在孤独时刻也并非真正孤单。"
+            elif emotion == 'hopeful' or emotion == 'optimistic' or emotion == 'inspired':
+                response = f"作为MelodyMind音乐心理治疗师，希望和乐观是推动我们前行的强大力量，您的积极心态值得珍视。音乐可以强化这种情绪，进一步激发我们的创造力和动力。这里有{len(recommendations)}首可能与您当前充满希望的状态相契合的歌曲，它们富有感染力的旋律和鼓舞人心的节奏，希望能进一步点燃您的灵感之火。"
+            else:
+                response = f"作为MelodyMind音乐心理治疗师，感谢您分享您的情绪状态。音乐有着与我们情感共鸣并影响我们心境的独特能力。根据您当前的情绪，我为您精心选择了{len(recommendations)}首歌曲，希望它们能够陪伴您度过这一刻，带给您美好的聆听体验。"
+            
+            # 在回复中添加具体推荐，并确保每首歌都有preview_url
+            if recommendations:
+                response += "\n\n以下是为您推荐的音乐，您可以点击\"试听\"按钮来体验："
+                for i, rec in enumerate(recommendations, 1):
+                    # 确保必要的字段存在
+                    title = rec.get('title', '未知歌曲')
+                    artist = rec.get('artist', '未知艺术家')
+                    
+                    # 确保每个推荐都有preview_url
+                    if 'preview_url' not in rec or not rec['preview_url']:
+                        rec['preview_url'] = 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb8817b6f2d041f15eb1'
+                    
+                    # 添加音乐处方师的解释
+                    if 'explanation' in rec:
+                        response += f"\n{i}. 《{title}》 - {artist} ({rec['explanation']})"
+                    else:
+                        response += f"\n{i}. 《{title}》 - {artist}"
+            
+            return response
+                
+        except Exception as e:
+            logger.error(f"生成响应失败: {e}")
+            
+            # 降级到简单响应
+            if recommendations:
+                simple_response = f"为您推荐以下{len(recommendations)}首歌曲：\n"
+                for i, rec in enumerate(recommendations, 1):
+                    title = rec.get('title', '未知歌曲')
+                    artist = rec.get('artist', '未知艺术家')
+                    
+                    # 确保有preview_url
+                    if 'preview_url' not in rec or not rec['preview_url']:
+                        rec['preview_url'] = 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb8817b6f2d041f15eb1'
+                    
+                    simple_response += f"{i}. 《{title}》 - {artist}\n"
+                return simple_response
+            else:
+                return "抱歉，我暂时无法为您找到匹配的音乐推荐。您能告诉我更多关于您喜欢的音乐风格或艺术家吗？"
     
     def _update_user_model(self, user_id, real_time=False):
         """更新用户推荐模型"""
@@ -778,25 +932,62 @@ class MusicRecommenderAgent:
             return 'calm'
         else:
             return 'neutral'
+    
+    def _load_metadata(self):
+        """加载音乐元数据"""
+        try:
+            # 尝试从推荐引擎获取元数据
+            self.metadata = getattr(self.hybrid_recommender, 'metadata', {})
+            if not self.metadata:
+                logger.warning("推荐引擎中没有可用的元数据")
+                self.metadata = {}
+            else:
+                logger.info(f"成功加载元数据，共 {len(self.metadata)} 条记录")
+        except Exception as e:
+            logger.error(f"加载元数据时出错: {e}")
+            self.metadata = {}
 
 # API接口，可集成到Flask应用中
 def handle_agent_request(user_id, message):
     """
-    处理API请求
+    处理用户消息并返回AI代理的回复
     
     参数:
         user_id: 用户ID
         message: 用户消息
         
     返回:
-        推荐和回复
+        AI代理的回复
     """
-    # 初始化代理
-    agent = MusicRecommenderAgent()
-    
-    # 处理消息
-    result = agent.process_message(user_id, message)
-    return result
+    try:
+        # 初始化代理
+        agent = MusicRecommenderAgent()
+        
+        # 处理消息
+        result = agent.process_message(user_id, message)
+        
+        # 提取响应
+        ai_message = result.get('message', '抱歉，我无法理解您的消息。')
+        
+        # 打印响应以便Debug
+        print(f"AI: {ai_message}")
+        
+        # 返回响应
+        return {
+            'status': 'success',
+            'message': ai_message,
+            'emotion': result.get('emotion', 'neutral'),
+            'emotion_description': result.get('emotion_description', ''),
+            'recommendations': result.get('recommendations', [])
+        }
+    except Exception as e:
+        error_msg = f"处理消息时出错: {str(e)}"
+        print(f"Error: {error_msg}")
+        return {
+            'status': 'error',
+            'message': '抱歉，我现在无法处理您的请求。请稍后再试。',
+            'error': error_msg
+        }
 
 if __name__ == "__main__":
     # 测试代码

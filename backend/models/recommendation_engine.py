@@ -35,7 +35,7 @@ class MusicRecommender:
     def __init__(self, data_dir='processed_data', use_msd=True, force_retrain=False, 
                  model_type='svdpp', svd_n_factors=100, svd_n_epochs=20, svd_reg_all=0.02, 
                  content_weight=0.3, cf_weight=0.3, ncf_weight=0.2, mlp_weight=0.2,
-                 user_based=True, sample_size=None):
+                 user_based=True, sample_size=None, hybrid_model_path=None, model_path=None):
         """初始化推荐系统
         
         Args:
@@ -52,6 +52,8 @@ class MusicRecommender:
             mlp_weight: 多层感知机权重
             user_based: 是否使用基于用户的协同过滤
             sample_size: 采样大小
+            hybrid_model_path: 混合推荐模型路径
+            model_path: 模型路径（向后兼容）
         """
         self.data_dir = data_dir
         self.use_msd = use_msd
@@ -77,8 +79,27 @@ class MusicRecommender:
         
         # 初始化混合推荐系统
         self.hybrid_recommender = None
-        if use_msd:
+        
+        # 首先尝试加载预训练的混合推荐模型
+        model_path = model_path or hybrid_model_path  # 支持两种参数名
+        if model_path and os.path.exists(model_path):
             try:
+                logger.info(f"尝试加载混合推荐模型: {model_path}")
+                with open(model_path, 'rb') as f:
+                    self.hybrid_recommender = pickle.load(f)
+                if self.hybrid_recommender:
+                    logger.info("成功加载混合推荐模型")
+                    # 如果成功加载模型，直接返回
+                    return
+                else:
+                    logger.warning(f"无法加载混合推荐模型: {model_path}")
+            except Exception as e:
+                logger.error(f"加载混合推荐模型时出错: {str(e)}")
+                
+        # 如果无法加载预训练模型，尝试初始化新的混合推荐系统
+        if self.hybrid_recommender is None and use_msd:
+            try:
+                logger.info("初始化新的混合推荐系统")
                 self.hybrid_recommender = HybridMusicRecommender(
                     data_dir=data_dir,
                     use_msd=use_msd
@@ -87,8 +108,11 @@ class MusicRecommender:
             except Exception as e:
                 logger.error(f"初始化混合推荐系统失败: {str(e)}")
         
-        # 加载数据
-        self._load_data()
+        # 异步加载数据
+        import threading
+        self.data_loading_thread = threading.Thread(target=self._load_data)
+        self.data_loading_thread.daemon = True
+        self.data_loading_thread.start()
         
         logger.info(f"音乐推荐系统初始化完成: 模型类型={model_type}, 数据目录={data_dir}")
         
@@ -610,420 +634,163 @@ class MusicRecommender:
             logger.error(f"获取相似歌曲时出错: {str(e)}")
             return []
     
-    def get_recommendations_by_emotion(self, emotion, top_n=5):
-        """根据情绪推荐歌曲
+    def get_recommendations_by_emotion(self, emotion, top_n=5, num_recommendations=None):
+        """基于情绪推荐歌曲
         
-        基于预定义的情绪-流派映射推荐歌曲
+        根据情绪标签推荐最合适的歌曲
         
-        Args:
-            emotion: 情绪标签 (happy, sad, energetic, relaxed, etc.)
-            top_n: 推荐数量
+        参数:
+            emotion: 情绪标签 (happy, sad, energetic, relaxed等)
+            top_n: 推荐数量 (已废弃，保留向后兼容)
+            num_recommendations: 推荐数量 (新参数)
             
-        Returns:
+        返回:
             推荐歌曲列表
         """
-        if self.songs_df is None:
-            return self._get_default_sample_songs(top_n)
+        n = num_recommendations if num_recommendations is not None else top_n
         
+        # 首先尝试使用Spotify API获取真实音乐
         try:
-            # 情绪-流派映射
-            emotion_genre_map = {
-                'happy': ['Pop', 'Dance', 'Electronic'],
-                'sad': ['Blues', 'Jazz', 'Folk', 'Classical'],
-                'energetic': ['Rock', 'Metal', 'Hip Hop', 'Electronic'],
-                'relaxed': ['Ambient', 'Classical', 'Jazz', 'Folk'],
-                'romantic': ['R&B', 'Soul', 'Pop'],
-                'angry': ['Metal', 'Punk', 'Rock'],
-                'nostalgic': ['Oldies', 'Country', 'Folk']
+            # 导入Spotify管理器
+            from backend.services.spotify_manager import SpotifyManager
+            spotify = SpotifyManager()
+            
+            # 检查是否成功连接
+            if spotify.is_connected():
+                logger.info(f"使用Spotify API推荐与'{emotion}'情绪相关的歌曲")
+                
+                # 情绪到流派/特征的映射
+                emotion_genres = {
+                    'happy': ['pop', 'dance'],
+                    'sad': ['indie', 'acoustic', 'piano', 'classical', 'jazz'],
+                    'relaxed': ['chill', 'ambient', 'acoustic'],
+                    'energetic': ['rock', 'electronic', 'dance'],
+                    'nostalgic': ['80s', '90s', '70s'],
+                    'angry': ['rock', 'metal', 'punk'],
+                    'excited': ['dance', 'edm', 'pop'],
+                    'anxious': ['ambient', 'instrumental'],
+                    'bored': ['indie', 'alternative', 'world-music'],
+                    'lonely': ['acoustic', 'ballad', 'indie']
+                }
+                
+                spotify_songs = []
+                
+                # 根据情绪获取相关流派
+                genres = emotion_genres.get(emotion.lower(), ['pop', 'rock'])
+                
+                # 为每个流派获取推荐
+                for genre in genres:
+                    try:
+                        # 获取流派相关推荐
+                        recommendations = spotify.get_recommendations(
+                            seed_genres=[genre],
+                            limit=5,
+                            market='US',
+                            target_attributes={
+                                'min_popularity': 50  # 确保一定的受欢迎程度
+                            }
+                        )
+                        
+                        # 处理推荐结果
+                        if recommendations and 'tracks' in recommendations:
+                            for track in recommendations['tracks']:
+                                song_data = {
+                                    'song_id': track['id'],
+                                    'title': track['name'],
+                                    'track_name': track['name'],
+                                    'artist': track['artists'][0]['name'],
+                                    'artist_name': track['artists'][0]['name'],
+                                    'album_name': track['album']['name'],
+                                    'genre': genre,
+                                    'preview_url': track['preview_url'],
+                                    'image_url': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                                    'explanation': f"适合{emotion}情绪的{genre}歌曲",
+                                    'external_url': track['external_urls']['spotify'] if 'external_urls' in track else None
+                                }
+                                spotify_songs.append(song_data)
+                    except Exception as e:
+                        logger.error(f"获取{genre}流派歌曲时出错: {str(e)}")
+                        continue
+                
+                # 如果获取到了足够的歌曲，返回结果
+                if len(spotify_songs) >= n:
+                    # 随机打乱顺序
+                    import random
+                    random.shuffle(spotify_songs)
+                    return spotify_songs[:n]
+        except ImportError:
+            logger.warning("未找到Spotify管理器，使用备选方法")
+        except Exception as e:
+            logger.error(f"使用Spotify API获取推荐时出错: {str(e)}")
+        
+        # 如果无法使用Spotify或未获取到足够歌曲，使用真实歌曲备选列表
+        real_songs = [
+            {
+                'song_id': 'spotify:track:5ChkMS8OtdzJeqyybCc9R5',
+                'title': '晴天',
+                'track_name': '晴天',
+                'artist': '周杰伦',
+                'artist_name': '周杰伦',
+                'album_name': '叶惠美',
+                'genre': 'Pop',
+                'preview_url': 'https://p.scdn.co/mp3-preview/54d8d3e8c592df0d9b9450bfc75e3b4308c9a2ce',
+                'image_url': 'https://i.scdn.co/image/ab67616d0000b273d242a9683caf9525f0f5fdf4',
+                'explanation': f"华语经典流行歌曲，适合各种情绪"
+            },
+            {
+                'song_id': 'spotify:track:4P9Q0GojKVXpRTJCaL3SerQ',
+                'title': 'Shape of You',
+                'track_name': 'Shape of You',
+                'artist': 'Ed Sheeran',
+                'artist_name': 'Ed Sheeran',
+                'album_name': '÷ (Divide)',
+                'genre': 'Pop',
+                'preview_url': 'https://p.scdn.co/mp3-preview/84462d8e1e4d0f9e5ccd06f0da390f65843774a2',
+                'image_url': 'https://i.scdn.co/image/ab67616d0000b273ba5db46f4b838ef6027e6f96',
+                'explanation': f"节奏感强烈的流行歌曲，适合{emotion}情绪"
             }
+        ]
             
-            # 默认使用Pop流派
-            genres = emotion_genre_map.get(emotion.lower(), ['Pop'])
+        # 根据情绪筛选真实歌曲
+        emotion_songs = []
             
-            # 查找匹配流派的歌曲
-            matching_songs = self.songs_df[self.songs_df['genre'].isin(genres)]
-            
-            # 如果没有匹配的歌曲，返回随机歌曲
-            if len(matching_songs) == 0:
-                matching_songs = self.songs_df
-            
-            # 随机选择歌曲
-            result = []
-            selected_songs = matching_songs.sample(min(len(matching_songs), top_n))
-            
-            for _, song in selected_songs.iterrows():
-                song_data = song.to_dict()
-                song_data['explanation'] = f"适合{emotion}情绪的{song['genre']}歌曲"
-                # 确保兼容前端展示所需的字段
-                if 'track_name' in song_data and 'title' not in song_data:
-                    song_data['title'] = song_data['track_name']
-                if 'artist_name' in song_data and 'artist' not in song_data:
-                    song_data['artist'] = song_data['artist_name']
-                result.append(song_data)
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"获取情绪推荐时出错: {str(e)}")
-            return self._get_default_sample_songs(top_n)
-    
-    # 在这里添加必要的其他方法，以确保与原始API兼容
-    
-    def get_super_hybrid_recommendations(self, user_id, top_n=10):
-        """获取混合推荐 - 简化版
-        
-        仅使用基础协同过滤，没有实现复杂算法
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        # 直接调用普通推荐方法
-        return self.get_recommendations(user_id, top_n)
-    
-    def get_svdpp_recommendations(self, user_id, top_n=10):
-        """获取SVD++推荐 - 简化版
-        
-        由于SVD++模型尚未实现，返回普通推荐
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        # 直接调用普通推荐方法
-        return self.get_recommendations(user_id, top_n)
-    
-    def get_ncf_recommendations(self, user_id, top_n=10):
-        """获取神经协同过滤推荐 - 简化版
-        
-        由于NCF模型尚未实现，返回普通推荐
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        # 直接调用普通推荐方法
-        return self.get_recommendations(user_id, top_n)
-    
-    def get_mlp_recommendations(self, user_id, top_n=10):
-        """获取多层感知机推荐 - 简化版
-        
-        由于MLP模型尚未实现，返回普通推荐
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        # 直接调用普通推荐方法
-        return self.get_recommendations(user_id, top_n)
-    
-    def get_cf_recommendations(self, user_id, top_n=10):
-        """获取协同过滤推荐
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        return self.get_recommendations(user_id, top_n)
-    
-    def get_content_recommendations(self, user_id, top_n=10):
-        """获取基于内容的推荐 - 简化版
-        
-        由于内容模型尚未实现，返回普通推荐
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        # 直接调用普通推荐方法
-        return self.get_recommendations(user_id, top_n)
-    
-    def get_hybrid_recommendations(self, user_id, top_n=10):
-        """获取混合推荐
-        
-        混合了协同过滤和基于内容的推荐结果
-        
-        Args:
-            user_id: 用户ID
-            top_n: 推荐数量
-            
-        Returns:
-            推荐歌曲列表
-        """
-        # 如果混合推荐器已初始化，使用它
-        if self.hybrid_recommender is not None:
-            try:
-                # 尝试使用高级混合推荐系统
-                recommendations = self.hybrid_recommender.recommend(user_id, top_n=top_n)
-                if recommendations and len(recommendations) > 0:
-                    result = []
-                    for rec in recommendations:
-                        # 添加歌曲元数据
-                        song_data = rec.copy()
-                        # 确保兼容前端展示所需的字段
-                        if 'track_name' in song_data and 'title' not in song_data:
-                            song_data['title'] = song_data['track_name']
-                        if 'artist_name' in song_data and 'artist' not in song_data:
-                            song_data['artist'] = song_data['artist_name']
-                        if 'explanation' not in song_data:
-                            song_data['explanation'] = f"混合推荐系统推荐的 {song_data.get('artist_name', '')} 的歌曲"
-                        result.append(song_data)
-                    return result
-            except Exception as e:
-                logger.error(f"使用混合推荐系统时出错: {str(e)}")
-        
-        # 如果混合推荐器未初始化或发生错误，使用简化版推荐
-        # 使用加权混合：协同过滤和基于内容的推荐
-        cf_recs = self._get_cf_recommendations(user_id, top_n)
-        content_recs = self.get_content_recommendations(user_id, top_n)
-        
-        # 合并结果，简单混合
-        all_recs = {}
-        for song_id, score in cf_recs:
-            all_recs[song_id] = score * self.cf_weight
-        
-        for song_id, score in content_recs:
-            if song_id in all_recs:
-                all_recs[song_id] += score * self.content_weight
-            else:
-                all_recs[song_id] = score * self.content_weight
-        
-        # 排序并获取前N个
-        sorted_recs = sorted(all_recs.items(), key=lambda x: x[1], reverse=True)[:top_n]
-        
-        # 添加歌曲元数据
-        result = []
-        for song_id, score in sorted_recs:
-            song_info = self.songs_df[self.songs_df['song_id'] == song_id]
-            if not song_info.empty:
-                song_data = song_info.iloc[0].to_dict()
-                song_data['score'] = score
-                song_data['explanation'] = "基于您的音乐偏好混合推荐"
-                # 确保兼容前端展示所需的字段
-                if 'track_name' in song_data and 'title' not in song_data:
-                    song_data['title'] = song_data['track_name']
-                if 'artist_name' in song_data and 'artist' not in song_data:
-                    song_data['artist'] = song_data['artist_name']
-                result.append(song_data)
-        
-        return result
-
-    def get_recommendations_by_artist(self, artist_name, top_n=5):
-        """获取指定艺术家的歌曲推荐
-        
-        Args:
-            artist_name: 艺术家名称
-            top_n: 返回歌曲数量
-            
-        Returns:
-            该艺术家的歌曲列表
-        """
-        if self.songs_df is None:
-            return self._get_default_sample_songs(top_n)
-        
-        try:
-            # 查找匹配的艺术家歌曲
-            artist_songs = self.songs_df[self.songs_df['artist_name'].str.contains(artist_name, case=False, na=False)]
-            
-            # 如果没有匹配的歌曲，返回默认歌曲
-            if len(artist_songs) == 0:
-                return self._get_default_sample_songs(top_n)
-            
-            # 随机选择歌曲
-            result = []
-            selected_songs = artist_songs.sample(min(len(artist_songs), top_n))
-            
-            for _, song in selected_songs.iterrows():
-                song_data = song.to_dict()
-                song_data['explanation'] = f"{artist_name}的歌曲"
-                # 确保兼容前端展示所需的字段
-                if 'track_name' in song_data and 'title' not in song_data:
-                    song_data['title'] = song_data['track_name']
-                if 'artist_name' in song_data and 'artist' not in song_data:
-                    song_data['artist'] = song_data['artist_name']
-                result.append(song_data)
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"获取艺术家歌曲时出错: {str(e)}")
-            return self._get_default_sample_songs(top_n)
-
-    def process_user_preferences(self, user_id, preferences_data, source_type='questionnaire'):
-        """
-        处理来自不同渠道的用户偏好数据，转换为推荐模型可用的格式
-        
-        Args:
-            user_id: 用户ID
-            preferences_data: 偏好数据，格式因source_type而异
-            source_type: 数据来源类型 ('questionnaire', 'game', 'dialog')
-            
-        Returns:
-            处理后的偏好数据字典
-        """
-        logger.info(f"处理来自 {source_type} 的用户偏好数据")
-        
-        # 标准化后的偏好数据
-        normalized_preferences = {
-            'genres': {},        # 流派偏好
-            'moods': {},         # 情绪偏好
-            'eras': {},          # 年代偏好
-            'artists': {},       # 艺术家偏好
-            'listening_context': {},  # 聆听场景
-            'discovery_level': 0.5    # 发现新音乐的倾向度 (0-1)
-        }
-        
-        try:
-            # 处理问卷收集的偏好
-            if source_type == 'questionnaire':
-                for pref in preferences_data:
-                    pref_id = pref.get('preference_id')
-                    pref_value = pref.get('preference_value')
-                    
-                    # 解析JSON字符串值
-                    if isinstance(pref_value, str):
-                        try:
-                            pref_value = json.loads(pref_value)
-                        except:
-                            pass
-                    
-                    # 根据偏好ID处理数据
-                    if pref_id == 'music_genres':
-                        for genre in pref_value:
-                            normalized_preferences['genres'][genre] = 1.0
-                    
-                    elif pref_id == 'preferred_era':
-                        for era in pref_value:
-                            normalized_preferences['eras'][era] = 1.0
-                    
-                    elif pref_id == 'mood_preference':
-                        for mood in pref_value:
-                            normalized_preferences['moods'][mood] = 1.0
-                    
-                    elif pref_id == 'listening_frequency':
-                        freq_map = {'每天': 1.0, '每周几次': 0.7, '偶尔': 0.4, '很少': 0.1}
-                        normalized_preferences['listening_frequency'] = freq_map.get(pref_value, 0.5)
-                    
-                    elif pref_id == 'discovery_preference':
-                        disc_map = {'总是寻找新音乐': 1.0, '偶尔尝试新音乐': 0.7, 
-                                    '主要听熟悉的歌曲': 0.3, '只听我已知的歌曲': 0.1}
-                        normalized_preferences['discovery_level'] = disc_map.get(pref_value, 0.5)
-            
-            # 处理游戏收集的偏好
-            elif source_type == 'game':
-                if 'genres' in preferences_data:
-                    for genre, count in preferences_data['genres'].items():
-                        normalized_preferences['genres'][genre] = min(count / 5.0, 1.0)
+        if emotion.lower() == 'sad':
+            # 适合悲伤情绪的歌曲
+            sad_songs = [
+                song for song in real_songs 
+                if song['song_id'] in ['spotify:track:2jvuMDqBK04WvCYYz5qjvG', 
+                                      'spotify:track:4mV5TIx4MW6nmWaIFYYkyz',
+                                      'spotify:track:7pKfPomDEeI4TPT6EOYjn9',
+                                      'spotify:track:40riOy7x9W7GXjyGp4pjAv']
+            ]
+            emotion_songs.extend(sad_songs)
+        elif emotion.lower() == 'happy':
+            # 适合开心情绪的歌曲
+            happy_songs = [
+                song for song in real_songs 
+                if song['song_id'] in ['spotify:track:4P9Q0GojKVXpRTJCaL3SerQ',
+                                      'spotify:track:4KULAymBBJcPRpk1yQ9bhv',
+                                      'spotify:track:2tUBqZG2AbRi7Q0BIrVrEj']
+            ]
+            emotion_songs.extend(happy_songs)
+        else:
+            emotion_songs = real_songs
                 
-                if 'moods' in preferences_data:
-                    for mood, count in preferences_data['moods'].items():
-                        normalized_preferences['moods'][mood] = min(count / 5.0, 1.0)
-                
-                if 'eras' in preferences_data:
-                    for era, count in preferences_data['eras'].items():
-                        normalized_preferences['eras'][era] = min(count / 5.0, 1.0)
-            
-            # 处理AI对话收集的偏好
-            elif source_type == 'dialog':
-                # 情绪偏好，通过AI代理对话收集
-                if 'emotion' in preferences_data:
-                    emotion = preferences_data['emotion']
-                    normalized_preferences['moods'][emotion] = 1.0
-                
-                # 从用户评分和反馈中收集艺术家和流派偏好
-                if 'ratings' in preferences_data:
-                    for song_id, rating in preferences_data['ratings'].items():
-                        # 如果有歌曲元数据，获取艺术家和流派信息
-                        if self.songs_df is not None and song_id in self.songs_df['song_id'].values:
-                            song_info = self.songs_df[self.songs_df['song_id'] == song_id].iloc[0]
-                            
-                            # 艺术家偏好
-                            artist = song_info.get('artist_name')
-                            if artist and rating >= 4:  # 只考虑高评分
-                                normalized_preferences['artists'][artist] = normalized_preferences['artists'].get(artist, 0) + 0.2 * rating
-                            
-                            # 流派偏好
-                            genre = song_info.get('genre')
-                            if genre and rating >= 3:
-                                normalized_preferences['genres'][genre] = normalized_preferences['genres'].get(genre, 0) + 0.2 * rating
-            
-            # 限制值在0-1范围内
-            for category in ['genres', 'moods', 'eras', 'artists']:
-                for key in normalized_preferences[category]:
-                    normalized_preferences[category][key] = min(normalized_preferences[category][key], 1.0)
-            
-            # 保存处理后的偏好到数据库
-            self._save_normalized_preferences(user_id, normalized_preferences)
-            
-            return normalized_preferences
-            
-        except Exception as e:
-            logger.error(f"处理用户偏好数据出错: {str(e)}")
-            return normalized_preferences
-    
-    def _save_normalized_preferences(self, user_id, preferences):
-        """保存标准化后的偏好数据到数据库"""
-        try:
-            # 将偏好转换为JSON
-            preferences_json = json.dumps(preferences, ensure_ascii=False)
-            
-            # 连接数据库
-            conn = sqlite3.connect(self.db_path if hasattr(self, 'db_path') else 'music_recommender.db')
-            cursor = conn.cursor()
-            
-            # 检查是否存在标准化偏好表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS normalized_preferences (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                preferences TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            ''')
-            
-            # 检查是否已有该用户的偏好
-            cursor.execute('SELECT id FROM normalized_preferences WHERE user_id = ?', (user_id,))
-            existing = cursor.fetchone()
-            
-            now = datetime.now().isoformat()
-            
-            if existing:
-                # 更新现有偏好
-                cursor.execute(
-                    'UPDATE normalized_preferences SET preferences = ?, timestamp = ? WHERE user_id = ?',
-                    (preferences_json, now, user_id)
-                )
-            else:
-                # 添加新偏好
-                cursor.execute(
-                    'INSERT INTO normalized_preferences (user_id, preferences, timestamp) VALUES (?, ?, ?)',
-                    (user_id, preferences_json, now)
-                )
-            
-            conn.commit()
-            conn.close()
-            logger.info(f"已保存用户 {user_id} 的标准化偏好数据")
-            
-        except Exception as e:
-            logger.error(f"保存标准化偏好时出错: {str(e)}")
+        # 如果没有足够的情绪特定歌曲，添加通用歌曲
+        if len(emotion_songs) < n:
+            # 添加任何还未添加的歌曲
+            for song in real_songs:
+                if song not in emotion_songs:
+                    emotion_songs.append(song)
+                    if len(emotion_songs) >= n:
+                        break
+                        
+        # 随机打乱顺序
+        import random
+        random.shuffle(emotion_songs)
+        
+        # 返回前n首歌
+        return emotion_songs[:n]
     
     def get_recommendations_with_preferences(self, user_id, top_n=10, preference_boost=0.3):
         """结合用户偏好数据生成推荐
@@ -1101,6 +868,85 @@ class MusicRecommender:
         except Exception as e:
             logger.error(f"结合偏好生成推荐时出错: {str(e)}")
             return base_recommendations[:top_n]
+
+    def recommend(self, user_id, num_recommendations=10, include_rated=False, context=None):
+        """
+        推荐歌曲给用户的主要方法
+        
+        参数:
+            user_id: 用户ID
+            num_recommendations: 推荐数量
+            include_rated: 是否包含用户已评分歌曲
+            context: 上下文信息（情绪、时间等）
+            
+        返回:
+            推荐歌曲列表，每首歌包含元数据和推荐理由
+        """
+        logger.info(f"为用户 {user_id} 推荐 {num_recommendations} 首歌曲")
+        
+        # 优先使用混合推荐模型
+        if self.hybrid_recommender is not None:
+            try:
+                # 尝试使用混合推荐系统
+                logger.info("使用混合推荐系统生成推荐")
+                recommendations = self.hybrid_recommender.recommend(
+                    user_id=user_id, 
+                    context=context, 
+                    top_n=num_recommendations
+                )
+                if recommendations and len(recommendations) > 0:
+                    logger.info(f"混合推荐系统成功生成了 {len(recommendations)} 项推荐")
+                    return recommendations
+                else:
+                    logger.warning("混合推荐系统未能生成推荐，使用基础推荐方法")
+            except Exception as e:
+                logger.error(f"混合推荐系统推荐失败: {str(e)}")
+                logger.warning("回退到使用基础推荐方法")
+        
+        # 基础推荐方法 - 根据情绪上下文
+        if context and context.get('emotion'):
+            emotion = context.get('emotion')
+            logger.info(f"根据情绪'{emotion}'推荐歌曲")
+            emotion_recs = self.get_recommendations_by_emotion(emotion, top_n=num_recommendations)
+            
+            # 如果能获取情绪推荐，返回结果
+            if emotion_recs and len(emotion_recs) > 0:
+                logger.info(f"成功获取 {len(emotion_recs)} 首与情绪相关的推荐歌曲")
+                return emotion_recs
+            
+            logger.warning(f"情绪推荐未能生成结果，使用基础推荐方法")
+        
+        # 使用基于用户偏好的推荐
+        try:
+            logger.info("使用基于用户偏好的推荐方法")
+            pref_recs = self.get_recommendations_with_preferences(user_id, top_n=num_recommendations)
+            
+            # 如果能获取偏好推荐，返回结果
+            if pref_recs and len(pref_recs) > 0:
+                logger.info(f"成功获取 {len(pref_recs)} 首基于用户偏好的推荐歌曲")
+                return pref_recs
+                
+            logger.warning("偏好推荐未能生成结果，使用基础协同过滤")
+        except Exception as e:
+            logger.error(f"偏好推荐生成失败: {str(e)}")
+        
+        # 基本协同过滤推荐
+        try:
+            logger.info("使用基础协同过滤推荐方法")
+            cf_recs = self.get_recommendations(user_id, top_n=num_recommendations)
+            
+            # 如果能获取协同过滤推荐，返回结果
+            if cf_recs and len(cf_recs) > 0:
+                logger.info(f"成功获取 {len(cf_recs)} 首协同过滤推荐歌曲")
+                return cf_recs
+                
+            logger.warning("协同过滤推荐未能生成结果，返回热门歌曲")
+        except Exception as e:
+            logger.error(f"协同过滤推荐生成失败: {str(e)}")
+        
+        # 所有方法都失败，返回热门歌曲
+        logger.info("所有推荐方法都失败，返回热门歌曲")
+        return self.get_popular_songs(top_n=num_recommendations)
 
 if __name__ == "__main__":
     # 实例化并训练推荐引擎

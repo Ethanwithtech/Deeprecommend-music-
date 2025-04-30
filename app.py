@@ -133,15 +133,18 @@ def refresh_questionnaire():
 if __name__ == "__main__":
     # 打印环境配置情况
     logger.info(f"Spotify API: {'已配置' if os.environ.get('SPOTIFY_CLIENT_ID') else '未配置'}")
-    logger.info(f"Claude API: {'已配置' if os.environ.get('ANTHROPIC_API_KEY') else '未配置'}")
+    logger.info(f"HKBU API: {'已配置' if os.environ.get('HKBU_API_KEY') else '已使用默认配置'}")
     logger.info(f"数据目录: {os.environ.get('DATA_DIR')}")
     logger.info(f"使用MSD: {os.environ.get('USE_MSD')}")
     logger.info(f"强制重训: {os.environ.get('FORCE_RETRAIN')}")
     logger.info(f"模型类型: {os.environ.get('MODEL_TYPE')}")
     logger.info(f"混合权重: {os.environ.get('CONTENT_WEIGHT')}")
     
+    # 确保HKBU API配置
+    os.environ.setdefault('HKBU_API_KEY', '06fd2422-8207-4a5b-8aaa-434415ed3a2b')
+    
     # 启动浏览器线程
-    threading.Timer(1.5, open_browser).start()
+    threading.Timer(2.5, open_browser).start()  # 增加延迟时间，等待服务器完全启动
     
     # 启动Flask应用程序
     host = os.environ.get('HOST', '0.0.0.0')
@@ -151,4 +154,7 @@ if __name__ == "__main__":
     logger.info(f"启动服务器: {host}:{port}, 调试模式: {debug}")
     # 禁用.env自动加载，避免编码问题
     os.environ['FLASK_SKIP_DOTENV'] = '1'
-    app.run(debug=debug, host=host, port=port) 
+    
+    # 使用线程池处理请求
+    from werkzeug.serving import run_simple
+    run_simple(host, port, app, use_reloader=False, use_debugger=debug, threaded=True, processes=1) 

@@ -19,9 +19,10 @@ class EmotionAnalyzer:
         参数:
             api_key: 可选的API密钥，用于调用外部情绪分析服务
         """
-        self.api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-        self.api_url = "https://api.anthropic.com/v1/messages"
-        self.provider = 'ANTHROPIC' if self.api_key else 'INTERNAL'
+        self.api_key = api_key or os.environ.get('HKBU_API_KEY', '06fd2422-8207-4a5b-8aaa-434415ed3a2b')
+        self.api_url = "https://genai.hkbu.edu.hk/general/rest/deployments/gpt-4-o/chat/completions"
+        self.api_version = "2024-10-21"
+        self.provider = 'HKBU' if self.api_key else 'INTERNAL'
         
         # 情绪类别和对应的音乐类型映射
         self.emotion_music_map = {
@@ -60,7 +61,7 @@ class EmotionAnalyzer:
         if self.provider == 'INTERNAL':
             return self._internal_emotion_analysis(message)
             
-        # 使用Claude API进行分析
+        # 使用HKBU API进行分析
         system_prompt = """
         你是一个专业的情绪分析助手。请分析用户消息中表达的情绪状态，并提供适合该情绪的音乐类型建议。
         你需要返回一个JSON格式的结果，包含以下字段：
@@ -74,29 +75,29 @@ class EmotionAnalyzer:
         
         try:
             # 准备请求
+            url = f"{self.api_url}?api-version={self.api_version}"
+            
             headers = {
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
+                "Content-Type": "application/json",
+                "api-key": self.api_key
             }
             
-            data = {
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 300,
-                "temperature": 0.3,
-                "system": system_prompt,
+            payload = {
                 "messages": [
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message}
-                ]
+                ],
+                "temperature": 0.3,
+                "max_tokens": 300
             }
             
             # 发送请求
-            response = requests.post(self.api_url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
             
             # 解析响应
             result = response.json()
-            content = result.get('content', [{}])[0].get('text', '{}')
+            content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
             
             # 清理可能的非JSON前缀或后缀
             if '```json' in content:
@@ -105,9 +106,13 @@ class EmotionAnalyzer:
                 content = content.split('```')[1].split('```')[0].strip()
             
             # 解析JSON
-            emotion_data = json.loads(content)
-            logger.info(f"情绪分析结果: {emotion_data['emotion']}, 强度: {emotion_data['intensity']}")
-            return emotion_data
+            try:
+                emotion_data = json.loads(content)
+                logger.info(f"情绪分析结果: {emotion_data['emotion']}, 强度: {emotion_data['intensity']}")
+                return emotion_data
+            except json.JSONDecodeError:
+                logger.error(f"无法解析JSON响应: {content}")
+                return self._internal_emotion_analysis(message)
             
         except Exception as e:
             logger.error(f"情绪分析API调用失败: {e}")

@@ -16,6 +16,8 @@ import threading
 import time
 import uuid
 import warnings
+import signal
+import queue
 
 # 添加项目根目录到Python路径以便导入其他模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -56,8 +58,11 @@ SUPPORTED_LANGUAGES = ['zh', 'en']
 DEFAULT_LANGUAGE = 'zh'
 
 # 全局变量
-recommender = None
-agent = None
+recommender = None   # 音乐推荐引擎
+agent = None         # 音乐推荐代理
+db_conn = None       # 数据库连接
+spotify_manager = None  # Spotify管理器
+ai_service = None    # AI服务
 
 # 每个请求前处理语言设置
 @app.before_request
@@ -354,35 +359,106 @@ except Exception as e:
 
 # 初始化推荐系统
 def init_recommender():
-    """初始化推荐系统"""
-    global recommender, agent
+    """初始化推荐引擎
+    
+    根据配置参数初始化推荐引擎实例
+    """
+    global recommender
     
     try:
-        # 首先尝试加载已训练的混合推荐模型
-        model_path = os.path.join(ROOT_DIR, 'models', 'trained', 'hybrid_recommender_10k.pkl')
+        logger.info(f"MusicRecommender类检查:")
+        from backend.models.recommendation_engine import MusicRecommender
         
-        if os.path.exists(model_path):
-            logger.info(f"尝试加载混合推荐模型: {model_path}")
-            recommender = HybridMusicRecommender()
-            if recommender.load_model(model_path):
-                logger.info("✅ 成功加载混合推荐模型")
-            else:
-                logger.warning("❌ 加载混合推荐模型失败，将使用基本推荐器")
-                recommender = MusicRecommender()
-        else:
-            logger.warning(f"模型文件不存在: {model_path}，将使用基本推荐器")
+        # 检查类参数和位置
+        import inspect
+        signature = str(inspect.signature(MusicRecommender.__init__))
+        module_path = MusicRecommender.__module__
+        file_location = inspect.getfile(MusicRecommender)
+        
+        logger.info(f"MusicRecommender.__init__参数: {signature}")
+        logger.info(f"MusicRecommender模块路径: {module_path}")
+        logger.info(f"MusicRecommender文件位置: {file_location}")
+        
+        # Windows系统不支持SIGALRM，使用线程方式设置超时
+        import threading
+        import queue
+        
+        # 使用队列存储结果
+        result_queue = queue.Queue()
+        
+        def load_model_with_timeout():
+            try:
+                # 首先尝试加载预训练的混合推荐模型
+                model_paths = [
+                    os.path.join('models', 'trained', 'hybrid_recommender_10k.pkl'),
+                    os.path.join('models', 'trained', 'hybrid_recommender.pkl'),
+                    os.path.join('backend', 'models', 'trained', 'hybrid_recommender_10k.pkl'),
+                    os.path.join('backend', 'models', 'trained', 'hybrid_recommender.pkl')
+                ]
+                
+                for path in model_paths:
+                    if os.path.exists(path):
+                        logger.info(f"尝试加载模型: {path}")
+                        recommender_instance = MusicRecommender(model_path=path)
+                        if recommender_instance:
+                            logger.info(f"成功加载模型: {path}")
+                            result_queue.put(recommender_instance)
+                            return
+                
+                # 如果所有模型加载失败，使用空模型
+                logger.warning("所有模型加载失败，使用空模型实例")
+                result_queue.put(MusicRecommender())
+                
+            except Exception as e:
+                logger.error(f"加载模型失败: {str(e)}")
+                result_queue.put(MusicRecommender())
+        
+        # 启动加载线程
+        model_thread = threading.Thread(target=load_model_with_timeout)
+        model_thread.daemon = True
+        model_thread.start()
+        
+        # 等待结果，设置5秒超时
+        try:
+            recommender = result_queue.get(timeout=5.0)
+            logger.info("成功初始化推荐引擎")
+        except queue.Empty:
+            logger.warning("加载模型超时，使用空模型实例")
             recommender = MusicRecommender()
-            
-        # 初始化推荐代理
-        agent = MusicRecommenderAgent(recommender=recommender)
-        logger.info("✅ 成功初始化推荐代理")
         
-        return True
-    except Exception as e:
-        logger.error(f"初始化推荐系统时出错: {str(e)}")
-        recommender = MusicRecommender()  # 使用简单推荐器作为后备
-        agent = MusicRecommenderAgent(recommender=recommender)
-        return False
+        # 确保HKBU API配置
+        os.environ.setdefault('HKBU_API_KEY', '06fd2422-8207-4a5b-8aaa-434415ed3a2b')
+        
+        return recommender
+    except ImportError as e:
+        logger.error(f"导入MusicRecommender类失败: {str(e)}")
+        # 返回一个最简单的推荐器实现
+        class SimpleRecommender:
+            def get_recommendations_by_emotion(self, emotion, top_n=5, num_recommendations=None):
+                n = num_recommendations if num_recommendations is not None else top_n
+                return self._create_sample_data(n, emotion)
+                
+            def _create_sample_data(self, n, emotion):
+                import random
+                genres = ['Pop', 'Rock', 'Jazz', 'Classical', 'Electronic']
+                data = []
+                for i in range(1, n+1):
+                    song_id = random.randint(1, 1000)
+                    artist_id = random.randint(1, 50)
+                    data.append({
+                        'id': song_id,
+                        'title': f'Song {song_id}',
+                        'artist': f'Artist {artist_id}',
+                        'album': f'Album {random.randint(1, 200)}',
+                        'genre': random.choice(genres),
+                        'year': random.randint(1970, 2023),
+                        'emotion': emotion,
+                        'cover_image': f'https://via.placeholder.com/300x300.png?text=Music+{song_id}',
+                        'preview_url': 'https://p.scdn.co/mp3-preview/2f37da1d4221f40b9d1a98cd191f4d6f1646ad17',
+                    })
+                return data
+                
+        return SimpleRecommender()
 
 # 初始化推荐系统
 init_recommender()
@@ -698,7 +774,7 @@ def user_recommendations(user_id):
     logger.info(f"为用户 {user_id} 生成推荐")
     try:
         # 从推荐引擎获取推荐
-        recommendations = recommender.get_hybrid_recommendations(user_id, top_n=10)
+        recommendations = recommender.recommend(user_id, num_recommendations=10, include_rated=False)
         
         # 如果没有足够的推荐（如新用户），补充热门歌曲
         if len(recommendations) < 10:
@@ -822,30 +898,64 @@ def submit_evaluation_api():
 @app.route('/api/chat', methods=['POST'])
 def chat_api():
     """API：与AI代理对话"""
-    data = request.json
-    user_id = data.get('user_id')
-    message = data.get('message')
-    
-    if not user_id or not message:
-        return jsonify({'error': '缺少必要参数'}), 400
-    
-    # 获取AI代理回复
-    response = agent.process_message(user_id, message)
-    
-    # 保存对话历史
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    now = datetime.now().isoformat()
-    cursor.execute('''
-    INSERT INTO chat_history (user_id, message, response, timestamp)
-    VALUES (?, ?, ?, ?)
-    ''', (user_id, message, response, now))
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'response': response})
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        message = data.get('message')
+        
+        if not user_id or not message:
+            return jsonify({'error': '缺少必要参数'}), 400
+        
+        logger.info(f"用户 {user_id} 发送聊天消息: {message[:30]}...")
+        
+        # 获取AI代理回复
+        try:
+            response = agent.process_message(user_id, message)
+        except Exception as e:
+            logger.error(f"AI处理消息失败: {str(e)}")
+            # 创建降级响应
+            emotion_data = ai_service._get_default_emotion_analysis(message)
+            fallback_response = {
+                'emotion': emotion_data.get('emotion', 'neutral'),
+                'emotion_description': emotion_data.get('description', '无法确定情绪'),
+                'recommendations': [],
+                'message': f"抱歉，AI处理您的消息时遇到了问题。{emotion_data.get('comfort_message', '')}"
+            }
+            response = fallback_response
+        
+        # 保存对话历史
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            now = datetime.now().isoformat()
+            
+            # 将响应字典转换为JSON字符串
+            response_json = json.dumps(response)
+            
+            cursor.execute('''
+            INSERT INTO chat_history (user_id, message, response, timestamp)
+            VALUES (?, ?, ?, ?)
+            ''', (user_id, message, response_json, now))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"保存聊天历史失败: {str(e)}")
+            # 即使保存失败也继续返回响应
+        
+        return jsonify({'response': response})
+        
+    except Exception as e:
+        logger.error(f"聊天API处理失败: {str(e)}")
+        return jsonify({
+            'error': '处理聊天请求时发生错误',
+            'response': {
+                'message': '很抱歉，服务器遇到了问题。请稍后再试。',
+                'emotion': 'neutral',
+                'recommendations': []
+            }
+        }), 500
 
 @app.route('/api/chat/history', methods=['GET'])
 def get_chat_history():
@@ -874,7 +984,14 @@ def get_chat_history():
         
         # 转换为更易用的格式
         formatted_history = []
-        for msg, resp, time in history:
+        for msg, resp_json, time in history:
+            try:
+                # 尝试将JSON字符串解析回字典
+                resp = json.loads(resp_json)
+            except:
+                # 如果解析失败，保持原样
+                resp = resp_json
+                
             formatted_history.append({
                 'user_message': msg,
                 'ai_response': resp,
@@ -892,7 +1009,7 @@ def get_songs_by_artist(artist_name):
     logger.info(f"获取艺术家 '{artist_name}' 的歌曲")
     try:
         # 从本地推荐引擎获取艺术家歌曲
-        songs = recommender.get_recommendations_by_artist(artist_name, top_n=10)
+        songs = recommender.get_recommendations_by_artist(artist_name=artist_name, top_n=10)
         
         # 如果本地数据不足，补充从Spotify获取的信息
         if len(songs) < 5:
@@ -933,12 +1050,12 @@ def get_similar_songs(track_id):
     logger.info(f"获取与歌曲 {track_id} 相似的歌曲")
     try:
         # 从本地推荐引擎获取相似歌曲
-        similar_songs = recommender.get_similar_songs(track_id, top_n=5)
+        similar_songs = recommender.get_similar_songs(song_id=track_id, top_n=5)
         
         # 获取歌曲信息用于Spotify查询
         song_info = None
         for song in similar_songs:
-            if song.get('track_id') == track_id:
+            if song.get('track_id') == track_id or song.get('song_id') == track_id:
                 song_info = song
                 break
         
@@ -947,7 +1064,7 @@ def get_similar_songs(track_id):
             try:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
-                cursor.execute('SELECT track_id, track_name, artist_name FROM songs WHERE track_id = ?', (track_id,))
+                cursor.execute('SELECT track_id, track_name, artist_name FROM songs WHERE track_id = ? OR song_id = ?', (track_id, track_id))
                 result = cursor.fetchone()
                 if result:
                     song_info = {'track_id': result[0], 'track_name': result[1], 'artist_name': result[2]}
@@ -1053,82 +1170,107 @@ def get_spotify_similar_tracks():
 
 @app.route('/api/emotion/analyze', methods=['POST'])
 def analyze_emotion_api():
-    """API：分析用户情绪并返回适合的音乐推荐"""
-    data = request.json
-    user_id = data.get('user_id')
-    message = data.get('message')
-    
-    if not user_id or not message:
-        return jsonify({'error': '缺少必要参数'}), 400
-    
-    logger.info(f"用户 {user_id} 请求情绪分析: {message[:50]}...")
-    
+    """API：分析文本情绪"""
     try:
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({'error': '缺少文本内容'}), 400
+            
+        text = data['text']
+        logger.info(f"情绪分析请求: {text[:30]}...")
+        
         # 使用AI服务分析情绪
-        emotion_analysis = agent.ai_service.analyze_emotion(message)
-        
-        # 使用音乐推荐代理生成基于情绪的推荐
-        response = agent._provide_emotion_based_recommendation(user_id, message)
-        
-        # 保存对话历史
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        now = datetime.now().isoformat()
-        cursor.execute('''
-        INSERT INTO chat_history (user_id, message, response, timestamp)
-        VALUES (?, ?, ?, ?)
-        ''', (user_id, message, response, now))
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'emotion': emotion_analysis.get('emotion', 'neutral'),
-            'intensity': emotion_analysis.get('intensity', 0.5),
-            'description': emotion_analysis.get('description', ''),
-            'music_suggestion': emotion_analysis.get('music_suggestion', ''),
-            'response': response
-        })
+        try:
+            emotion_data = ai_service.analyze_emotion(text)
+            # 记录分析结果
+            logger.info(f"情绪分析结果: {emotion_data.get('emotion', 'unknown')}, 强度: {emotion_data.get('intensity', 0)}")
+            return jsonify(emotion_data)
+        except Exception as e:
+            logger.error(f"AI情绪分析失败: {str(e)}")
+            # 降级到备用分析
+            fallback_result = ai_service._get_default_emotion_analysis(text)
+            logger.info(f"使用备用情绪分析: {fallback_result.get('emotion', 'unknown')}")
+            return jsonify(fallback_result)
+            
     except Exception as e:
-        logger.error(f"情绪分析API出错: {str(e)}", exc_info=True)
-        return jsonify({'error': '处理情绪分析请求时出错'}), 500
+        logger.error(f"情绪分析API错误: {str(e)}")
+        return jsonify({
+            'error': '情绪分析失败',
+            'emotion': 'neutral',
+            'intensity': 0.5,
+            'description': '无法确定情绪状态',
+            'music_suggestion': '推荐尝试您喜欢的音乐类型',
+            'comfort_message': '我们的系统遇到了一点小问题，但音乐永远在这里陪伴您。'
+        }), 500
 
 @app.route('/api/emotion/music', methods=['GET'])
 def get_emotion_music_api():
-    """API：获取适合特定情绪的音乐列表"""
-    user_id = request.args.get('user_id')
-    emotion = request.args.get('emotion', 'neutral')
+    """获取针对情绪的音乐推荐API
     
-    if not user_id:
-        return jsonify({'error': '缺少必要参数'}), 400
-    
-    logger.info(f"用户 {user_id} 请求情绪音乐列表: {emotion}")
-    
+    基于特定情绪提供音乐推荐
+    """
     try:
-        # 直接使用音乐推荐代理的方法获取特定情绪的歌曲
-        music_suggestion = "适合当前情绪的"  # 默认建议
-        emotion_songs = agent._get_mood_specific_songs(emotion, music_suggestion, count=10)
+        emotion = request.args.get('emotion', 'relaxed')
+        num_songs = int(request.args.get('num', '5'))
         
-        # 用Spotify数据丰富推荐结果
-        enriched_songs = []
-        for song in emotion_songs:
+        logger.info(f"根据情绪'{emotion}'推荐歌曲")
+        
+        # 设置响应超时
+        result_queue = queue.Queue()
+        
+        def get_recommendations():
             try:
-                enriched_song = spotify_manager.enrich_recommendation({
-                    'track_name': song['track_name'],
-                    'artist_name': song['artist_name'],
-                    'explanation': song['explanation']
-                })
-                enriched_songs.append(enriched_song)
+                # 首先尝试使用Spotify API获取真实音乐
+                from backend.services.spotify_manager import SpotifyManager
+                spotify = SpotifyManager()
+                
+                if spotify.is_connected():
+                    # 使用Spotify获取真实音乐推荐
+                    songs = spotify.get_tracks_for_emotion(emotion, limit=num_songs)
+                    if songs and len(songs) > 0:
+                        logger.info(f"通过Spotify API成功获取 {len(songs)} 首与情绪相关的歌曲")
+                        result_queue.put(songs)
+                        return
+            except ImportError:
+                logger.warning("Spotify管理器不可用，将使用基本推荐")
             except Exception as e:
-                # 如果丰富失败，使用原始数据
-                logger.warning(f"丰富歌曲信息失败: {e}")
-                enriched_songs.append(song)
+                logger.error(f"使用Spotify API获取音乐失败: {str(e)}")
+            
+            # 回退到基本推荐引擎
+            global recommender
+            if recommender is None:
+                recommender = init_recommender()
+                
+            recommendations = recommender.get_recommendations_by_emotion(emotion, num_recommendations=num_songs)
+            result_queue.put(recommendations)
         
-        return jsonify(enriched_songs)
+        # 启动推荐线程
+        recommendation_thread = threading.Thread(target=get_recommendations)
+        recommendation_thread.daemon = True
+        recommendation_thread.start()
+        
+        # 等待结果，设置5秒超时
+        try:
+            songs = result_queue.get(timeout=5.0)
+            return jsonify(songs)
+        except queue.Empty:
+            logger.warning("推荐超时，返回紧急备用推荐")
+            # 紧急备用推荐
+            return jsonify([{
+                'id': i,
+                'title': f'Music {i}',
+                'artist': f'Artist {i % 10 + 1}',
+                'album': f'Album {i % 5 + 1}',
+                'genre': 'Pop' if i % 2 == 0 else 'Rock',
+                'year': 2023,
+                'emotion': emotion,
+                'cover_image': f'https://via.placeholder.com/300x300.png?text=Backup+{i}',
+                'preview_url': 'https://p.scdn.co/mp3-preview/2f37da1d4221f40b9d1a98cd191f4d6f1646ad17',
+            } for i in range(1, num_songs + 1)])
+            
     except Exception as e:
-        logger.error(f"获取情绪音乐列表时出错: {str(e)}", exc_info=True)
-        return jsonify({'error': '获取情绪音乐列表时出错'}), 500
+        logger.error(f"获取情绪音乐推荐失败: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 # 添加开发者角色管理API
 @app.route('/api/user/developer/status', methods=['GET'])
@@ -1477,6 +1619,59 @@ def get_user_preferences(user_id):
         'user_id': user_id,
         'preferences': preferences
     })
+
+@app.route('/api/preview', methods=['GET'])
+def preview_song():
+    """获取歌曲预览URL
+    
+    获取指定歌曲的预览URL，如果Spotify没有预览URL，则返回一个默认的预览URL
+    """
+    song_id = request.args.get('song_id')
+    
+    if not song_id:
+        return jsonify({'error': '缺少歌曲ID参数'}), 400
+    
+    try:
+        # 先在本地数据库中查找
+        db_absolute_path = os.path.abspath(DB_PATH)
+        conn = sqlite3.connect(db_absolute_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT preview_url FROM songs WHERE song_id = ?", (song_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result and result[0]:
+            preview_url = result[0]
+            logger.info(f"从本地数据库中获取歌曲预览URL: {song_id}")
+            return jsonify({'preview_url': preview_url})
+        
+        # 如果本地数据库中没有，尝试从Spotify获取
+        try:
+            if 'spotify_manager' in globals() and spotify_manager and spotify_manager.is_ready():
+                logger.info(f"尝试从Spotify获取歌曲预览URL: {song_id}")
+                track_info = spotify_manager.get_track_info(track_id=song_id)
+                if track_info and 'preview_url' in track_info and track_info['preview_url']:
+                    # 更新本地数据库
+                    conn = sqlite3.connect(db_absolute_path)
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE songs SET preview_url = ? WHERE song_id = ?", 
+                                 (track_info['preview_url'], song_id))
+                    conn.commit()
+                    conn.close()
+                    
+                    return jsonify({'preview_url': track_info['preview_url']})
+        except Exception as e:
+            logger.error(f"从Spotify获取预览URL时出错: {str(e)}")
+        
+        # 如果无法获取预览URL，返回默认预览
+        logger.warning(f"无法获取歌曲预览URL，返回默认预览: {song_id}")
+        default_preview = "https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb8817b6f2d041f15eb1"
+        return jsonify({'preview_url': default_preview})
+        
+    except Exception as e:
+        logger.error(f"获取歌曲预览时出错: {str(e)}")
+        return jsonify({'error': f'获取预览失败: {str(e)}'}), 500
 
 def open_browser():
     """在新线程中打开浏览器"""

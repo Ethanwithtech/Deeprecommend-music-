@@ -793,4 +793,44 @@ canvas {
 .questionnaire-card .button:hover {
     transform: scale(1.05);
     box-shadow: 0 5px 15px rgba(255, 64, 129, 0.4);
+}
+
+/* 心理咨询师主动引导问题样式 */
+.message-container .message-bubble.proactive-question {
+    background-color: #f0f8ff;
+    border-left: 4px solid #3a7bd5;
+    font-style: italic;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.message-container .message-bubble.proactive-question::before {
+    content: "💭";
+    margin-right: 8px;
+}
+
+/* 心理咨询师模式指示器 */
+.therapist-mode-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(255, 255, 255, 0.8);
+    border-radius: 16px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    color: #4a154b;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+    transition: all 0.3s ease;
+}
+
+.therapist-mode-indicator .icon {
+    color: #7e57c2;
+}
+
+.therapist-mode-indicator:hover {
+    background-color: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
 } 
