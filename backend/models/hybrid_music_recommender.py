@@ -17,6 +17,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import time
+import json
+import sqlite3
+from datetime import datetime
 
 # 尝试导入可选依赖
 try:
@@ -1624,30 +1627,49 @@ class HybridMusicRecommender:
         return True
 
     def _create_new_user(self, user_id):
-        """创建新用户记录"""
+        """创建新用户
+        
+        参数:
+            user_id: 用户ID
+            
+        返回:
+            创建成功返回True，否则返回False
+        """
         try:
-            # 创建基本用户信息
-            new_user = {
-                'user_id': user_id,
-                'creation_time': int(time.time())
-            }
-
-            # 如果用户数据有其他必要字段，添加默认值
-            if self.users_df is not None and len(self.users_df) > 0:
-                for col in self.users_df.columns:
-                    if col not in new_user and col != 'user_id':
-                        # 根据列类型设置适当的默认值
-                        dtype = self.users_df[col].dtype
-                        if pd.api.types.is_numeric_dtype(dtype):
-                            new_user[col] = 0
-                        else:
-                            new_user[col] = ''
-
-            return new_user
-
+            if user_id in self.user_id_map:
+                return True
+                
+            # 初始化空的user_id_map字典如果不存在
+            if self.user_id_map is None:
+                self.user_id_map = {}
+                
+            # 添加用户到映射
+            next_id = len(self.user_id_map)
+            self.user_id_map[user_id] = next_id
+            
+            # 在用户特征中添加新用户（如果已初始化）
+            if self.user_features is not None:
+                # 创建新用户特征向量（使用平均值或零向量）
+                if len(self.user_features) > 0:
+                    avg_features = np.mean(self.user_features, axis=0)
+                    new_user_features = avg_features.reshape(1, -1)
+                else:
+                    # 如果没有现有用户，使用零向量
+                    feature_dim = 10  # 默认特征维度
+                    new_user_features = np.zeros((1, feature_dim))
+                
+                # 添加到用户特征矩阵
+                if isinstance(self.user_features, np.ndarray):
+                    self.user_features = np.vstack([self.user_features, new_user_features])
+                else:
+                    self.user_features = new_user_features
+            
+            logger.info(f"创建了新用户: {user_id}")
+            return True
+            
         except Exception as e:
-            logger.error(f"创建新用户时出错: {str(e)}")
-            return None
+            logger.error(f"创建新用户失败: {str(e)}")
+            return False
 
     def _update_cf_model_for_rating(self, user_id, song_id, rating):
         """为单个新评分更新协同过滤模型"""
@@ -2089,6 +2111,409 @@ class HybridMusicRecommender:
 
         return " ".join(explanations)
 
+    def update_user_emotion_vector(self, user_id, emotion, emotion_description=None):
+        """
+        根据用户当前情绪更新用户情绪向量
+        
+        参数:
+            user_id: 用户ID
+            emotion: 情绪标签（如'高兴', '悲伤'等）
+            emotion_description: 情绪的详细描述（可选）
+        
+        返回:
+            是否更新成功
+        """
+        try:
+            logger.info(f"更新用户 {user_id} 的情绪向量: {emotion}")
+            
+            # 情绪权重映射
+            emotion_weights = {
+                '高兴': 1.0,
+                '悲伤': 1.0,
+                '愤怒': 1.0,
+                '恐惧': 1.0,
+                '惊讶': 0.8,
+                '期待': 0.8,
+                '焦虑': 0.9,
+                '平静': 0.7,
+                '兴奋': 1.0,
+                '无聊': 0.7,
+                '疲倦': 0.7,
+                '困惑': 0.7,
+                '满足': 0.8,
+                '喜爱': 0.9,
+                '感激': 0.8,
+            }
+            
+            # 默认权重
+            weight = emotion_weights.get(emotion, 0.5) 
+            
+            # 首先尝试获取现有的用户偏好
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'music_recommender.db')
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # 检查是否存在标准化偏好表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS normalized_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                preferences TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            # 获取现有偏好
+            cursor.execute('SELECT preferences FROM normalized_preferences WHERE user_id = ?', (user_id,))
+            result = cursor.fetchone()
+            
+            now = datetime.now().isoformat()
+            
+            if result:
+                preferences = json.loads(result[0])
+                
+                # 如果不存在moods类别，创建它
+                if 'moods' not in preferences:
+                    preferences['moods'] = {}
+                
+                # 更新情绪偏好值
+                if emotion in preferences['moods']:
+                    # 调整现有情绪值 (增加权重，但最大为1.0)
+                    current_value = preferences['moods'][emotion]
+                    preferences['moods'][emotion] = min(current_value + weight * 0.2, 1.0)
+                else:
+                    # 添加新情绪
+                    preferences['moods'][emotion] = weight * 0.5
+                
+                # 保存更新的偏好
+                preferences_json = json.dumps(preferences, ensure_ascii=False)
+                cursor.execute(
+                    'UPDATE normalized_preferences SET preferences = ?, timestamp = ? WHERE user_id = ?',
+                    (preferences_json, now, user_id)
+                )
+            else:
+                # 创建新的偏好记录
+                preferences = {
+                    'genres': {},
+                    'moods': {emotion: weight * 0.5},
+                    'eras': {},
+                    'artists': {},
+                    'listening_frequency': 0.5,
+                    'discovery_level': 0.5
+                }
+                
+                preferences_json = json.dumps(preferences, ensure_ascii=False)
+                cursor.execute(
+                    'INSERT INTO normalized_preferences (user_id, preferences, timestamp) VALUES (?, ?, ?)',
+                    (user_id, preferences_json, now)
+                )
+            
+            # 记录用户情绪历史到新表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_emotion_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                emotion TEXT NOT NULL,
+                description TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            cursor.execute(
+                'INSERT INTO user_emotion_history (user_id, emotion, description, timestamp) VALUES (?, ?, ?, ?)',
+                (user_id, emotion, emotion_description or '', now)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"已更新用户 {user_id} 的情绪向量并记录历史")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新用户情绪向量失败: {str(e)}")
+            return False
+    
+    def update_user_dialogue_vector(self, user_id, dialogue_data):
+        """
+        根据用户对话内容更新用户对话向量
+        
+        参数:
+            user_id: 用户ID
+            dialogue_data: 对话数据，应包含以下字段:
+                - user_message: 用户消息
+                - ai_response: AI响应
+                - timestamp: 时间戳
+                - emotion: 可选，情绪标签
+        
+        返回:
+            是否更新成功
+        """
+        try:
+            logger.info(f"更新用户 {user_id} 的对话向量")
+            
+            # 提取对话数据
+            user_message = dialogue_data.get('user_message', '')
+            ai_response = dialogue_data.get('ai_response', '')
+            timestamp = dialogue_data.get('timestamp', datetime.now().isoformat())
+            emotion = dialogue_data.get('emotion', None)
+            
+            # 如果有情绪数据，同时更新情绪向量
+            if emotion and emotion != "未知":
+                self.update_user_emotion_vector(user_id, emotion)
+            
+            # 从对话内容中提取关键词
+            import re
+            keywords = []
+            
+            # 结合用户消息和AI响应
+            combined_text = f"{user_message} {ai_response}"
+            
+            # 尝试使用jieba提取关键词
+            try:
+                import jieba
+                import jieba.analyse
+                keywords = jieba.analyse.extract_tags(combined_text, topK=10, withWeight=True)
+                logger.info(f"使用jieba提取了 {len(keywords)} 个关键词")
+            except ImportError:
+                # 如果jieba不可用，使用简单的分词方法
+                logger.warning("jieba模块不可用，使用简单分词")
+                words = re.findall(r'\w+', combined_text)
+                # 统计词频
+                word_freq = {}
+                for word in words:
+                    if len(word) > 1:  # 忽略单字符
+                        word_freq[word] = word_freq.get(word, 0) + 1
+                
+                # 按频率排序选取前10个词
+                sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
+                keywords = [(word, freq/max(1, len(words))) for word, freq in sorted_words]
+                logger.info(f"使用简单分词提取了 {len(keywords)} 个关键词")
+            
+            # 创建或更新用户对话历史表
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'music_recommender.db')
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # 创建用户对话历史表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_dialogue_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                user_message TEXT NOT NULL,
+                ai_response TEXT NOT NULL,
+                keywords TEXT,
+                emotion TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            # 保存对话历史
+            cursor.execute(
+                'INSERT INTO user_dialogue_history (user_id, user_message, ai_response, keywords, emotion, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+                (
+                    user_id, 
+                    user_message, 
+                    ai_response, 
+                    json.dumps([{"word": k, "weight": w} for k, w in keywords], ensure_ascii=False),
+                    emotion or '',
+                    timestamp
+                )
+            )
+            
+            # 创建或检查normalized_preferences表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS normalized_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                preferences TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            # 更新用户偏好
+            cursor.execute('SELECT preferences FROM normalized_preferences WHERE user_id = ?', (user_id,))
+            result = cursor.fetchone()
+            
+            if result:
+                preferences = json.loads(result[0])
+            else:
+                # 创建新的偏好记录
+                preferences = {
+                    'genres': {},
+                    'moods': {},
+                    'eras': {},
+                    'artists': {},
+                    'listening_frequency': 0.5,
+                    'discovery_level': 0.5
+                }
+                
+                # 保存初始偏好
+                preferences_json = json.dumps(preferences, ensure_ascii=False)
+                cursor.execute(
+                    'INSERT INTO normalized_preferences (user_id, preferences, timestamp) VALUES (?, ?, ?)',
+                    (user_id, preferences_json, timestamp)
+                )
+                
+                # 重新获取刚插入的记录
+                cursor.execute('SELECT preferences FROM normalized_preferences WHERE user_id = ?', (user_id,))
+                result = cursor.fetchone()
+                if result:
+                    preferences = json.loads(result[0])
+            
+            # 如果已经有偏好记录，更新音乐相关偏好
+            if preferences:
+                # 检查关键词中是否有音乐相关的词汇
+                music_keywords = ['音乐', '歌曲', '歌手', '专辑', '旋律', '节奏', '流行', '摇滚', '古典', '爵士', '电子', '嘻哈', '民谣']
+                
+                # 提取关键词中的音乐流派信息
+                genre_keywords = {
+                    '流行': 'Pop', '摇滚': 'Rock', '古典': 'Classical', '爵士': 'Jazz', 
+                    '电子': 'Electronic', '嘻哈': 'Hip-Hop', '民谣': 'Folk', '金属': 'Metal',
+                    '乡村': 'Country', '蓝调': 'Blues', 'R&B': 'R&B'
+                }
+                
+                for keyword, weight in keywords:
+                    # 检查是否是音乐流派关键词
+                    if keyword in genre_keywords:
+                        genre = genre_keywords[keyword]
+                        if 'genres' not in preferences:
+                            preferences['genres'] = {}
+                        
+                        # 更新流派偏好
+                        current_value = preferences['genres'].get(genre, 0)
+                        preferences['genres'][genre] = min(current_value + weight * 0.1, 1.0)
+                
+                # 保存更新的偏好
+                preferences_json = json.dumps(preferences, ensure_ascii=False)
+                cursor.execute(
+                    'UPDATE normalized_preferences SET preferences = ?, timestamp = ? WHERE user_id = ?',
+                    (preferences_json, timestamp, user_id)
+                )
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"已更新用户 {user_id} 的对话向量并记录历史")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新用户对话向量失败: {str(e)}")
+            return False
+    
+    def update_user_preference(self, user_id, item_id, preference_type='rating', weight=1.0):
+        """
+        更新用户对特定歌曲的偏好
+        
+        参数:
+            user_id: 用户ID
+            item_id: 歌曲ID
+            preference_type: 偏好类型 ('rating', 'listening', 'ai_recommendation')
+            weight: 偏好权重 (0.0-1.0)
+        
+        返回:
+            是否更新成功
+        """
+        try:
+            logger.info(f"更新用户 {user_id} 对歌曲 {item_id} 的偏好")
+            
+            # 权重映射
+            type_weights = {
+                'rating': 1.0,       # 用户主动评分
+                'listening': 0.5,    # 听歌行为
+                'ai_recommendation': 0.3  # AI推荐的歌曲
+            }
+            
+            # 调整权重
+            actual_weight = weight * type_weights.get(preference_type, 0.5)
+            
+            # 获取歌曲信息
+            song_info = None
+            track_id = item_id
+            
+            # 如果是Spotify ID，需要转换格式
+            if isinstance(track_id, str) and track_id.startswith('spotify:track:'):
+                track_id = track_id.split(':')[-1]
+            
+            # 创建或更新用户偏好历史表
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'music_recommender.db')
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # 创建用户歌曲偏好表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_song_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                track_id TEXT NOT NULL,
+                preference_type TEXT NOT NULL,
+                weight REAL NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            
+            now = datetime.now().isoformat()
+            
+            # 记录偏好
+            cursor.execute(
+                'INSERT INTO user_song_preferences (user_id, track_id, preference_type, weight, timestamp) VALUES (?, ?, ?, ?, ?)',
+                (user_id, item_id, preference_type, actual_weight, now)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"已更新用户 {user_id} 对歌曲 {item_id} 的偏好记录")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新用户歌曲偏好失败: {str(e)}")
+            return False
+    
+    def update_user_vector(self, user_id, track_id, play_data):
+        """
+        根据用户听歌行为更新用户向量
+        
+        参数:
+            user_id: 用户ID
+            track_id: 歌曲ID
+            play_data: 播放数据，应包含以下字段:
+                - duration: 播放时长（秒）
+                - timestamp: 时间戳
+                - completed: 是否播放完成
+        
+        返回:
+            是否更新成功
+        """
+        try:
+            logger.info(f"更新用户 {user_id} 的听歌向量")
+            
+            # 提取播放数据
+            duration = play_data.get('duration', 0)
+            completed = play_data.get('completed', False)
+            
+            # 根据播放情况计算权重
+            if completed:
+                weight = 0.8  # 完整播放
+            elif duration > 60:
+                weight = 0.5  # 播放超过1分钟
+            elif duration > 30:
+                weight = 0.3  # 播放超过30秒
+            else:
+                weight = 0.1  # 短暂播放
+            
+            # 更新用户偏好
+            return self.update_user_preference(
+                user_id=user_id,
+                item_id=track_id,
+                preference_type='listening',
+                weight=weight
+            )
+            
+        except Exception as e:
+            logger.error(f"更新用户听歌向量失败: {str(e)}")
+            return False
+
 # 用于单独测试
 if __name__ == "__main__":
     # 配置日志
@@ -2137,3 +2562,66 @@ if __name__ == "__main__":
     for i, rec in enumerate(recommendations[:5]):  # 只打印前5条
         print(f"{i+1}. 《{rec['track_name']}》 - {rec['artist_name']}")
         print(f"   推荐理由: {rec['explanation']}")
+
+    # 测试代码
+    try:
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        
+        # 初始化混合推荐系统
+        recommender = HybridMusicRecommender(data_dir="../data", use_msd=False)
+        
+        # 测试用户ID
+        test_user_id = "test_user_001"
+        
+        # 测试更新用户情绪向量
+        print("测试更新用户情绪向量...")
+        result1 = recommender.update_user_emotion_vector(
+            user_id=test_user_id,
+            emotion="高兴",
+            emotion_description="用户表现得很开心"
+        )
+        print(f"结果: {'成功' if result1 else '失败'}\n")
+        
+        # 测试更新用户对话向量
+        print("测试更新用户对话向量...")
+        result2 = recommender.update_user_dialogue_vector(
+            user_id=test_user_id,
+            dialogue_data={
+                'user_message': '我今天听了一首很好听的流行歌曲',
+                'ai_response': '真棒！看起来你很喜欢流行音乐，我可以推荐更多类似的歌曲给你',
+                'timestamp': '2023-06-15T12:34:56',
+                'emotion': '高兴'
+            }
+        )
+        print(f"结果: {'成功' if result2 else '失败'}\n")
+        
+        # 测试更新用户歌曲偏好
+        print("测试更新用户歌曲偏好...")
+        result3 = recommender.update_user_preference(
+            user_id=test_user_id,
+            item_id='spotify:track:123456',
+            preference_type='rating',
+            weight=0.8
+        )
+        print(f"结果: {'成功' if result3 else '失败'}\n")
+        
+        # 测试更新用户听歌向量
+        print("测试更新用户听歌向量...")
+        result4 = recommender.update_user_vector(
+            user_id=test_user_id,
+            track_id='spotify:track:123456',
+            play_data={
+                'duration': 120,
+                'completed': True,
+                'timestamp': '2023-06-15T12:34:56'
+            }
+        )
+        print(f"结果: {'成功' if result4 else '失败'}\n")
+        
+        print("全部测试完成!")
+        
+    except Exception as e:
+        print(f"测试过程中发生错误: {str(e)}")
+        import traceback
+        traceback.print_exc()
